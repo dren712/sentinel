@@ -231,21 +231,23 @@ Every number below is the exact count reported by the command shown. All 264 pas
 | Bankrun recovery (slot-warped, real SPL custody) | 26 | `node --experimental-strip-types --test tests/bankrun-recovery.test.ts` |
 | Bankrun quarantine (slot-warped) | 13 | `node --experimental-strip-types --test tests/bankrun-quarantine.test.ts` |
 | Remediation / oracle fail-closed security | 26 | `node --experimental-strip-types --test tests/remediation-security.test.ts` |
+| Demo scenario integration | 4 | `pnpm run test:integration` |
 | Rust program unit tests | 30 | `cargo test --manifest-path programs/sentinel/Cargo.toml` |
 | Anchor localnet integration *(requires `anchor localnet`)* | 20 | `node --experimental-strip-types --test tests/sentinel-localnet.test.ts` |
-| **Total** | **264** | |
+| **Total** | **268** | |
 
-> **On the localnet suite:** those 20 tests require a running local validator. Without one they are **no-ops that report as passed** — each begins with `if (!isLocalnetAvailable) return;`. So the number that genuinely executes the program binary in-process is **244**, not 264. We are stating this rather than letting the inflated figure pass silently.
+> **On the localnet suite:** those 20 tests require a running local validator. Without one they are **no-ops that report as passed** — each begins with `if (!isLocalnetAvailable) return;`. So the number that genuinely executes the program binary in-process is **248**, not 268. We are stating this rather than letting the inflated figure pass silently.
 
 ```bash
 # One command runs the 149 TypeScript tests (SDK 110 + domain 39)
 pnpm test
 
-# 65 integration tests execute the real program binary in-process
+# 69 tests execute the real program binary or full decision loop
 (cd programs/sentinel && cargo build-sbf) && cp programs/sentinel/target/deploy/sentinel.so target/deploy/sentinel.so
 node --experimental-strip-types --test tests/bankrun-recovery.test.ts
 node --experimental-strip-types --test tests/bankrun-quarantine.test.ts
 node --experimental-strip-types --test tests/remediation-security.test.ts
+pnpm run test:integration
 cargo test --manifest-path programs/sentinel/Cargo.toml
 
 # The remaining 20 require a local validator first

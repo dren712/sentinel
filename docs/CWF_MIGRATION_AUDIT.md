@@ -18,7 +18,7 @@ All roadmap phases have crossed the real custody boundary:
 4. **Policy Freeze**: Snapshotting of `policy_version` during quarantine ensures policy cannot be modified mid-recovery (`PolicyFrozenDuringRecovery` 6036).
 5. **Pure Solver Engine**: Mathematical recovery calculation in `@sentinel/sdk` (`requiredRecoveryUnits`) computes minimal sell units required to satisfy postconditions without heuristics.
 6. **Autonomous Watcher & Solver Daemons**: Standalone Node.js background daemons (`scripts/watcher-daemon.mjs`, `scripts/solver-daemon.mjs`) continuously monitor RPC for invariant breaches and submit automated recovery transactions using `resolveRecoveryCustodyAccounts`.
-7. **Comprehensive Test Suite**: 30 Rust unit tests, 110 SDK, 39 domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation-security, and 20 Anchor localnet tests (264 total) all passing with 0 errors.
+7. **Comprehensive Test Suite**: 30 Rust unit tests, 110 SDK, 39 domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation-security, 4 demo-scenario integration, and 20 Anchor localnet tests (268 total) all passing with 0 errors.
 
 ---
 

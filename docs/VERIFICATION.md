@@ -80,7 +80,9 @@ Or run the canonical aggregate, which chains 1–3 via `Anchor.toml` `[scripts] 
 anchor test
 ```
 
-**Total: 264 automated tests** — 110 SDK, 39 Domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation security, 20 localnet, 30 Rust.
+**Total: 268 automated tests** — 110 SDK, 39 Domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation security, 4 demo-scenario integration, 20 localnet, 30 Rust.
+
+> 248 of the 268 genuinely execute: the 20 localnet tests no-op without a running `anchor localnet`.
 
 ---
 

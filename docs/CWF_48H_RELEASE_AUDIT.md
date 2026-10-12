@@ -17,7 +17,7 @@ This document provides a comprehensive, radically honest audit of the Sentinel c
 3. **Simulation / Demo Scenarios** (Controlled sandbox inputs and informational metrics)
 4. **Deliberately Excluded / Out-of-Scope** (Features omitted to preserve security and deadline integrity)
 5. **Resolved Misleading / Contradictory Claims** (Audit discrepancies eliminated during hardening)
-6. **Verified Automated Test Matrix** (All 264 automated tests passing with zero failures)
+6. **Verified Automated Test Matrix** (All 268 automated tests passing with zero failures)
 
 ---
 
@@ -90,9 +90,12 @@ All test suites were executed cleanly in the local environment:
 | **Bankrun Quarantine Tests** | `solana-bankrun` (`tests/bankrun-quarantine.test.ts`) | 13 | 13 | 0 |
 | **Remediation Security Tests** | `solana-bankrun` (`tests/remediation-security.test.ts`) | 26 | 26 | 0 |
 | **Localnet Integration Tests** | `@coral-xyz/anchor` (`tests/sentinel-localnet.test.ts`) | 20 | 20 | 0 |
+| **Demo Scenario Integration Tests** | Node test runner (`pnpm run test:integration`) | 4 | 4 | 0 |
 | **Rust Program Unit Tests** | `cargo test` | 30 | 30 | 0 |
-| **TOTAL** | — | **264** | **264** | **0** |
+| **TOTAL** | — | **268** | **268** | **0** |
 
-`pnpm test` at the workspace root runs the SDK + Domain packages together (110 + 39 = **149**); the remaining 115 are the four Bankrun/Anchor suites and `cargo test`.
+`pnpm test` at the workspace root runs the SDK + Domain packages together (110 + 39 = **149**); the remaining 119 are the four Bankrun/Anchor suites, the demo-scenario suite, and `cargo test`.
+
+> **Localnet caveat:** the 20 localnet tests require a running `anchor localnet`. Without one each returns immediately via `if (!isLocalnetAvailable) return;` and the runner reports them as passed without executing an assertion. **248 of the 268 genuinely execute.**
 
 All 14 Next.js production API routes (`route.ts` under `apps/web/src/app/api`) compiled cleanly with 0 TypeScript or build errors (`pnpm --filter @sentinel/web build`).

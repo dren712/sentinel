@@ -174,4 +174,4 @@ cargo test --manifest-path programs/sentinel/Cargo.toml
 # 7. Build Next.js production bundle
 pnpm --filter @sentinel/web build
 ```
-Total: **264 / 264 automated tests passing with zero failures** — 110 SDK, 39 Domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation security, 20 localnet, 30 Rust.
+Total: **268 / 268 automated tests passing with zero failures** — 110 SDK, 39 Domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation security, 4 demo-scenario integration, 20 localnet, 30 Rust.

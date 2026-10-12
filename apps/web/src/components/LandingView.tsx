@@ -311,7 +311,7 @@ const copySnippet = async () => {
           </div>
 
           <p className="type-metadata mt-4">
-            264 automated tests · 65 executing the real program binary in-process · no
+            268 automated tests · 65 executing the real program binary in-process · no
             third-party audit
           </p>
           </div>
