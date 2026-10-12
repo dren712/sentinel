@@ -287,6 +287,9 @@ The three hardening changes described above — oracle slot binding, recovery li
 ## Documentation Links
 
 - [Positioning & Capability Specification (Canonical)](./docs/POSITIONING.md)
+- **[Judge Q&A Defense Matrix](./docs/JUDGE_QA.md)** — including the three real bugs we found in our own audit and what we did about them
+- [Technical Architecture & all 16 Instructions](./docs/TECHNICAL.md)
+- [Verified Devnet Proofs & Transactions](./docs/VERIFICATION.md)
 - [Developer Quickstart Guide](./docs/QUICKSTART.md)
 - [CWF 48h Release Audit & Truth Matrix](./docs/CWF_48H_RELEASE_AUDIT.md)
 - [Quarantine & Containment Terminal (Live)](https://sentinel-finance-production-4560.up.railway.app/quarantine)
@@ -294,8 +297,8 @@ The three hardening changes described above — oracle slot binding, recovery li
 - [CWF Submission Document](./docs/cwf/SUBMISSION_CWF.md)
 - [Quarantine State Machine Specification](./docs/cwf/STATE_MACHINE.md)
 - [CWF Disclosure & Provenance Log](./docs/cwf/DISCLOSURE.md)
+- [Machine-Readable Devnet Evidence](./docs/cwf/devnet-evidence.json)
 - [Live Production Deployment (Railway)](https://sentinel-finance-production-4560.up.railway.app/)
-- [Technical Architecture & Anchor Lifecycle](./docs/TECHNICAL.md)
 - [11-Vector Adversarial Security Matrix](./docs/SECURITY.md)
 - [Full Devnet Verification Gate & Proofs](./docs/VERIFICATION.md)
 

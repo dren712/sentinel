@@ -56,28 +56,47 @@ To ensure technical accuracy for code reviewers and judges, Sentinel explicitly 
 
 ## 3. On-Chain Anchor Instruction Lifecycle
 
-The deployed Anchor program (`programs/sentinel/src/lib.rs`) exposes six core instructions:
+The deployed program (`programs/sentinel/src/lib.rs`, `declare_id! = 3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH`) exposes **16 instructions**. Accounts marked *owner* require the portfolio owner's signature; *agent* requires the agent authority; *anyone* is permissionless.
 
-1. **`initialize_policy` / `update_policy`**:
-   - **Signer**: Portfolio Owner Wallet (never signed by the backend server).
-   - **State**: Writes `max_single_asset_bps`, `min_stablecoin_bps`, `max_trade_value_usd`, `max_slippage_bps`, `policy_version`, and `is_active` to `PolicyAccount` (`["policy", owner]`).
-2. **`initialize_agent`**:
-   - **Signer**: Portfolio Owner Wallet.
-   - **State**: Binds `agent_id` (`"robo-01"`) and `agent_signer` public key to `AgentAccount` (`["agent", owner, agent_id]`).
-3. **`initialize_vault` / `sync_vault`**:
-   - **Signer**: Portfolio Owner / Authorized Signer.
-   - **State**: Synchronizes `total_value_usd`, `stablecoin_value_usd`, and per-asset valuations inside `VaultAccount` (`["vault", owner]`).
-4. **`create_promise`**:
-   - **Signer**: Delegated Agent Signer (`Robo-01`).
-   - **State**: Commits `intent_hash`, `policy_hash`, `pre_state_hash`, `proposed_post_state_hash`, `asset_symbol`, `trade_amount_usd`, and `is_buy` into `PromiseAccount` (`["promise", vault, promise_id]`).
-5. **`execute_guarded_trade`**:
-   - **Signer**: Delegated Agent Signer (`Robo-01`).
-   - **Verification**: Asserts `policy.is_active`, `agent.is_authorized`, `agent.agent_signer == signer`, `trade_amount_usd <= max_trade_value_usd`, `post_asset_bps <= max_single_asset_bps`, and `post_stablecoin_bps >= min_stablecoin_bps`.
+### 3.1 Policy and custody setup
 
-   - **Outcome**: If any check fails, returns `SentinelError` (`6000`–`6009`) and aborts atomically. If all checks pass, updates `VaultAccount` balances and marks `PromiseAccount.status = Executed`.
-6. **`record_evidence`**:
-   - **Signer**: Delegated Agent Signer (`Robo-01`).
-   - **State**: Anchors the 32-byte SHA-256 `evidence_hash` (`sha256(intent_hash || policy_hash || pre_state_hash || post_state_hash)`) in `EvidenceAccount` (`["evidence", promise]`).
+1. **`initialize_policy`** — *owner*
+   Seeds `["policy", owner]`. Writes `max_single_asset_bps`, `min_stablecoin_bps`, `max_trade_value_usd`, `max_slippage_bps`, `confirm_slots`, `recovery_window_slots`, `safe_destination`, and `policy_version = 1`. Rejects three degenerate shapes that would silently disable the guardrails: a cap at 100% (makes every invariant pass), bounds that cannot both be satisfied, and a cap at or below `OVERSELL_BAND_BPS` (vacates the oversell guard).
+2. **`update_policy`** — *owner*
+   Same account, plus `is_active`. Refused while the vault is `Quarantined` (`PolicyFrozenDuringRecovery`, 6036) by both an instruction-body check and an account constraint, so `safe_destination` cannot be swapped mid-recovery. Applies the same three coherence checks as `initialize_policy`.
+3. **`initialize_agent`** — *owner*
+   Seeds `["agent", owner, agent_id]`. Binds `agent_authority` — the key that may *propose* trades. Nothing else.
+4. **`initialize_vault`** — *owner*
+   Seeds `["vault", owner]`. Creates `PortfolioVault` with exactly one volatile position plus `usdc_balance_cents` and `total_value_cents`.
+5. **`sync_vault`** — *owner*
+   Re-declares current holdings. Requires `vault.status == Active` and an **active policy** (frozen during quarantine, so ledger state cannot be rewritten mid-recovery). Deliberately does **not** re-check concentration or reserve: this path *reports* the portfolio rather than *choosing* it, and a real violation must remain recordable so `flag_violation` can observe it. It is also why the `PolicyAccount` is now a required account here.
+6. **`set_agent_active`** — *owner*. Emergency pause kill-switch.
+
+### 3.2 The trading path
+
+7. **`create_promise`** — *agent*. Seeds `["promise", agent, promise_id]`. Commits `intent_hash`, `trade_asset_mint`, `trade_direction` (0 = BUY, 1 = SELL), `trade_amount_usd`, and an expiry into `PromiseAccount`.
+8. **`execute_guarded_trade`** — *agent, authorized by promise*.
+   The enforcement core. It reads a Pyth `PriceUpdateV2` account and verifies, in order: receiver ownership, `VerificationLevel::Full`, `feed_id` equality, **slot lag ≤ 64 slots**, publish age ≤ 60s, confidence ≤ 200bps. It then recomputes exposure from the **post-mutation vault state** — not from a projection — and checks the concentration cap, stablecoin floor and trade-size cap. Any failure reverts atomically with `6000`–`6046`. Settlement is **ledger-only**: it mutates vault accounting and performs no CPI.
+9. **`reject_promise`** — *agent*. Records an explicit rejection.
+
+### 3.3 Quarantine and containment
+
+10. **`flag_violation`** — **anyone**, no bond, no fee, no cooldown. Re-prices the position from the verified oracle feed and records a pending violation. A second call after `confirm_slots` transitions the vault to `Quarantined`, which hard-gates every trading instruction with `VaultNotActive` (6025).
+11. **`expire_quarantine`** — *anyone*. After `recovery_window_slots` the vault becomes `RecoveryExpired`, bounding how long the agent can be locked out.
+12. **`owner_release`** — *owner*. Returns a vault to `Active` **without verifying compliance** — an override, not a repair. Since `flag_violation` is permissionless, a non-compliant release can be re-quarantined.
+13. **`recover`** — **anyone**, but only while `Quarantined` and only within the recovery window, with the policy version pinned to the quarantine snapshot and the recovery nonce matched. Solves the minimum sell units, then executes a **program-signed SPL Token / Token-2022 CPI `transfer_checked`** from vault PDA custody to `policy.safe_destination`. Asserts the exact balance delta on **both** sides and that the vault's raw balance equals its post-recovery unit count, then bumps the nonce — making replay impossible. On success the vault returns to `Active`.
+14. **`owner_deposit`** — *owner*. Real SPL transfer owner → vault PDA. Rejects untracked mints (`UntrackedDepositMint`, 6046).
+15. **`owner_withdraw`** — *owner*. Real SPL transfer vault PDA → owner.
+
+### 3.4 Evidence
+
+16. **`record_evidence`** — *agent*. Stores `pre_state_hash`, `post_state_hash`, `verification_result`, and `failure_code` in `EvidenceAccount`.
+
+> **What this is not.** `record_evidence` does **not** compute SHA-256 on-chain and does **not** derive the hashes from vault state. The program contains no SHA-256 implementation; the digests are supplied by the agent signer and computed off-chain in `@sentinel/domain`. Treat PROVN receipts as an agent-attested audit trail binding an actor to a claim — not as an independently verified proof of the state transition.
+
+### 3.5 Error codes
+
+`programs/sentinel/src/errors.rs` defines **47 variants, 6000–6046**, contiguous. Representative values: `ExposureExceeded` 6000, `StablecoinReserveBreached` 6001, `TradeSizeExceeded` 6002, `StaleOracle` 6022, `ConfidenceTooWide` 6023, `VaultNotActive` 6025, `MissingCustodyAccounts` 6045, `UntrackedDepositMint` 6046.
 
 ---
 
@@ -123,7 +142,9 @@ Agent Intelligence ➔ Sentinel Policy Postconditions ➔ SVM Execution ➔ Sola
 ```
 
 As Solana moves toward lower-latency finality, Sentinel's policy-bound execution model can support increasingly responsive autonomous workflows:
-- **Today:** Sentinel runs on Solana Devnet with real on-chain policy enforcement (`execute_guarded_trade`), deterministic state transitions on `VaultAccount` PDAs, and PROVN cryptographic evidence.
+- **Today:** Sentinel runs on Solana Devnet with real on-chain policy enforcement (`execute_guarded_trade`), deterministic state transitions on `PortfolioVault` PDAs, and permissionless quarantine with SPL containment. The deployed binary is SHA-256 identical to this source tree — see the Program Version Boundary in [`README.md`](../README.md#program-version-boundary).
 - **Direction:** Faster consensus + autonomous agents + deterministic financial postconditions.
+
+**What this does not buy you.** Alpenglow does not change the threat model: a replayed price update or a mis-calibrated ledger is a *program logic* problem, not a consensus-latency one. Sentinel does not depend on Alpenglow, and would not be meaningfully safer with it deployed tomorrow.
 
 
