@@ -6,9 +6,9 @@ export const metadata: Metadata = {
   title: 'Sentinel Finance — On-Chain Risk Controls & Emergency Containment',
   description: 'On-chain risk controls and emergency containment for autonomous financial strategies on Solana.',
   icons: {
-    icon: '/Sentinel_Logo.png',
-    shortcut: '/Sentinel_Logo.png',
-    apple: '/Sentinel_Logo.png',
+    icon: '/favicon-64.png',
+    shortcut: '/favicon-64.png',
+    apple: '/apple-touch-icon.png',
   },
 };
 

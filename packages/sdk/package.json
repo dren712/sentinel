@@ -4,6 +4,18 @@
   "description": "Sentinel Finance client SDK, execution adapters, and autonomous agent simulator",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "files": [
+    "dist/src"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dren712/sentinel_finance.git",
+    "directory": "packages/sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "test": "tsc && node --test dist/tests/*.test.js",

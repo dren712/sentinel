@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
-import { ArrowRight, Play, ExternalLink, ShieldCheck, Radio } from 'lucide-react';
+import { ArrowRight, Play, ExternalLink, ShieldCheck, Radio, Copy, Check } from 'lucide-react';
 import { APP_CONFIG, getExplorerAddressUrl } from '@/lib/config';
 
 interface LandingViewProps {
@@ -116,6 +117,89 @@ function shortSig(sig: string) {
   return `${sig.slice(0, 6)}…${sig.slice(-4)}`;
 }
 
+const INTEGRATE_SNIPPET = `import { LiveExecutionAdapter, requiredRecoveryUnits } from '@sentinel/sdk';
+
+const adapter = new LiveExecutionAdapter({
+  rpcEndpoint: 'https://api.devnet.solana.com',
+  ownerSigner: ownerKeypair,   // policy + custody authority
+  agentSigner: agentKeypair,   // proposal authority only
+  programId: '3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH',
+});
+
+// Any caller can quarantine a breaching vault (permissionless).
+await adapter.flagViolation({
+  vaultOwner: ownerPubkey,
+  priceUpdateAccount: pythPriceUpdate,
+});
+
+// Any caller can run the recovery. Solves the minimal sell units, then
+// moves tokens via the program's own signed SPL CPI.
+const plan = requiredRecoveryUnits(vaultState, policy, { mode: 'custody' });
+
+await adapter.recover({
+  vaultOwner: ownerPubkey,
+  sellUnits: plan.sellUnits,
+  expectedNonce: vault.recoveryNonce,
+  priceUpdatePubkey: pythPriceUpdate,
+  custodyAccounts,   // vault ATA, safe-destination ATA, mint, token program
+});`;
+
+/**
+ * Robo-01 — the autonomous agent.
+ *
+ * Design intent: Robo-01 belongs to the *fluid* half of the system. It is the
+ * only thing on this page that drifts and reacts. The on-chain rails below it
+ * are static, tabular, and rigid. The visual contrast between the two columns
+ * is the thesis, not decoration.
+ */
+function RoboMascot({ onRun, isRunning }: { onRun: () => void; isRunning: boolean }) {
+  return (
+    <div className="lg:col-span-5">
+      <button
+        type="button"
+        onClick={onRun}
+        disabled={isRunning}
+        aria-label="Run the quarantine flow on Solana Devnet"
+        aria-busy={isRunning}
+        className="sentinel-focus sentinel-interactive relative flex aspect-square w-full max-w-[288px] items-center justify-center rounded-2xl"
+        style={{ background: 'var(--sentinel-surface)', border: '1px solid var(--sentinel-border)' }}
+      >
+        <Image
+          src="/robo-512.png"
+          alt="Robo-01, Sentinel's autonomous portfolio agent"
+          width={256}
+          height={213}
+          priority
+          className="sentinel-robo-drift h-auto w-[72%] select-none object-contain"
+        />
+        <span
+          className="absolute bottom-3 left-3 rounded px-2 py-1"
+          style={{
+            background: 'var(--sentinel-surface-elevated)',
+            border: '1px solid var(--sentinel-border)',
+          }}
+        >
+          <span className="type-micro-label tabular-nums">ROBO-01</span>
+        </span>
+        <span
+          className="type-micro-label absolute bottom-3 right-3 tabular-nums"
+          style={{
+            color: isRunning ? 'var(--sentinel-warning)' : 'var(--sentinel-text-subtle)',
+          }}
+        >
+          {isRunning ? 'RUNNING' : 'CLICK TO RUN'}
+        </span>
+      </button>
+
+      <p className="type-body mt-4 max-w-sm">
+        Robo-01 holds{' '}
+        <strong className="font-semibold text-[var(--sentinel-text)]">proposal authority only</strong>.
+        Every trade it proposes is checked on-chain before it can touch a vault.
+      </p>
+    </div>
+  );
+}
+
 export const LandingView: React.FC<LandingViewProps> = ({
   onEnterApp,
   onRunDemo,
@@ -123,11 +207,30 @@ export const LandingView: React.FC<LandingViewProps> = ({
 }) => {
   const shortProgram = `${APP_CONFIG.sentinelProgramId.slice(0, 4)}…${APP_CONFIG.sentinelProgramId.slice(-4)}`;
 
+const [copied, setCopied] = useState(false);
+const [copyState, setCopyState] = useState<'idle' | 'ok' | 'error'>('idle');
+
+const copySnippet = async () => {
+  try {
+    await navigator.clipboard.writeText(INTEGRATE_SNIPPET);
+    setCopyState('ok');
+    setCopied(true);
+  } catch {
+    setCopyState('error');
+  }
+  window.setTimeout(() => {
+    setCopied(false);
+    setCopyState('idle');
+  }, 2000);
+};
+
   return (
     <div className="w-full pb-24">
       {/* ───────────────────────────── HERO ───────────────────────────── */}
       <section className="px-4 pt-14 sm:px-6 sm:pt-20 lg:px-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-12 lg:gap-12">
+          <RoboMascot onRun={onRunDemo} isRunning={isRunningDemo} />
+          <div className="lg:col-span-7">
           <div className="flex items-center gap-2">
             <span
               className="type-micro-label inline-flex items-center gap-1.5 rounded px-2 py-1"
@@ -211,6 +314,7 @@ export const LandingView: React.FC<LandingViewProps> = ({
             264 automated tests · 85 integration tests executing the real program binary · no
             third-party audit
           </p>
+          </div>
         </div>
       </section>
 
@@ -421,6 +525,125 @@ export const LandingView: React.FC<LandingViewProps> = ({
                   </React.Fragment>
                 )
               )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ───────────────────── INTEGRATION SURFACE ────────────────────── */}
+      <section className="mt-20 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="type-section">Integrate</h2>
+              <p className="type-body mt-2 max-w-2xl">
+                Sentinel is a program first. Any Anchor client can call it with the program ID and
+                the IDL. The TypeScript SDK wraps the same instructions with split-key enforcement
+                and the recovery solver.
+              </p>
+            </div>
+            <a
+              href="https://github.com/dren712/sentinel_finance"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="sentinel-focus sentinel-interactive inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-sm font-semibold"
+              style={{ color: 'var(--sentinel-accent)' }}
+            >
+              github.com/dren712/sentinel_finance
+              <ExternalLink size={14} aria-hidden />
+            </a>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-5">
+            <div
+              className="overflow-hidden rounded-lg lg:col-span-3"
+              style={{ background: 'var(--sentinel-surface)', border: '1px solid var(--sentinel-border)' }}
+            >
+              <div
+                className="flex items-center justify-between px-4 py-2.5"
+                style={{ borderBottom: '1px solid var(--sentinel-border)' }}
+              >
+                <span className="type-micro-label">quarantine.ts</span>
+                <button
+                  type="button"
+                  onClick={() => copySnippet()}
+                  className="sentinel-focus sentinel-interactive inline-flex items-center gap-1.5 rounded px-2 py-1"
+                  style={{
+                    color:
+                      copyState === 'error'
+                        ? 'var(--sentinel-danger)'
+                        : copied
+                          ? 'var(--sentinel-success)'
+                          : 'var(--sentinel-text-subtle)',
+                  }}
+                  aria-label={copied ? 'Copied' : 'Copy snippet'}
+                >
+                  {copyState === 'error' ? (
+                    <span className="type-micro-label">Copy failed</span>
+                  ) : (
+                    <>
+                      {copied ? <Check size={12} aria-hidden /> : <Copy size={12} aria-hidden />}
+                      <span className="type-micro-label">{copied ? 'Copied' : 'Copy'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre
+                className="overflow-x-auto px-4 py-4 text-[0.75rem] leading-5"
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: 'var(--sentinel-text-muted)' }}
+              >
+                <code>{INTEGRATE_SNIPPET}</code>
+              </pre>
+            </div>
+
+            <div className="lg:col-span-2">
+              <div
+                className="rounded-lg p-5"
+                style={{ background: 'var(--sentinel-surface)', border: '1px solid var(--sentinel-border)' }}
+              >
+                <div className="type-micro-label">Two ways in</div>
+
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <div className="type-subsection">Direct — any client</div>
+                    <p className="type-body mt-1">
+                      Point an Anchor client at program{' '}
+                      <span
+                        className="tabular-nums"
+                        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+                      >
+                        {shortProgram}
+                      </span>{' '}
+                      with the IDL from <span className="font-mono">target/idl</span>. No dependency
+                      on Sentinel beyond the generated types.
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="type-subsection">SDK — TypeScript</div>
+                    <p className="type-body mt-1">
+                      <span
+                        className="tabular-nums"
+                        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+                      >
+                        @sentinel/sdk
+                      </span>{' '}
+                      ships the execution adapter, permissionless watcher and solver daemons, the
+                      SPL custody helpers, and the recovery solver.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className="mt-5 rounded px-3 py-2.5"
+                  style={{ background: 'var(--sentinel-warning-subtle)', border: '1px solid rgba(245,158,11,0.3)' }}
+                >
+                  <p className="text-xs leading-5" style={{ color: 'var(--sentinel-warning)' }}>
+                    The packages are configured for public release but are <strong>not yet published
+                    to npm</strong>. Install from the repository for now.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
