@@ -114,14 +114,14 @@ No customer conversations yet.
 
 ```bash
 solana program dump 3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH deployed.so --url devnet
-shasum -a 256 deployed.so    # 49769774311dd89acc1b07d173ad35337ec9ac444c5bb7e35dbd74b8d2e0b127
+shasum -a 256 deployed.so    # 9328a505f1152d4bc7c97452a820856b4df1297df02dbdaba351874cfd09b5a9
 ```
 
 | | |
 | :--- | :--- |
-| Deploy transaction | [`5SDRSNRdynxPSHEyyT5jy6ivMSkpAQmjihMcFXRMgF6kuDtFxU9NpDTZk6PLgE18Wo8oW3D4DkwErKdBoh79tQxU`](https://explorer.solana.com/tx/5SDRSNRdynxPSHEyyT5jy6ivMSkpAQmjihMcFXRMgF6kuDtFxU9NpDTZk6PLgE18Wo8oW3D4DkwErKdBoh79tQxU?cluster=devnet) |
-| Binary size | 544,000 bytes |
-| SHA-256 | `49769774311dd89acc1b07d173ad35337ec9ac444c5bb7e35dbd74b8d2e0b127` |
+| Deploy transaction | [`xsrfF792oqxwfpb5cMCwkM6N83muofnNU9MxSYF27EqvMCHWpSJfhCHwssoNKeANZWPtFzTqG5hTo4vSY6kQ8Fs`](https://explorer.solana.com/tx/xsrfF792oqxwfpb5cMCwkM6N83muofnNU9MxSYF27EqvMCHWpSJfhCHwssoNKeANZWPtFzTqG5hTo4vSY6kQ8Fs?cluster=devnet) |
+| Binary size | 476,264 bytes |
+| SHA-256 | `9328a505f1152d4bc7c97452a820856b4df1297df02dbdaba351874cfd09b5a9` |
 | Upgrade authority | `GR9CtiUswZtay68U2fGqcDeB1dg8sHtpVi9kk2nCEwzw` |
 
 Three hardening changes landed in this upgrade and are therefore **live on-chain**:

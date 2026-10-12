@@ -15,10 +15,10 @@ All roadmap phases have crossed the real custody boundary:
 1. **On-Chain SPL Token Custody**: Native zero-dependency SPL Token & Token-2022 CPI custody module (`programs/sentinel/src/custody.rs`) where the vault PDA holds actual tokens, managed by `owner_deposit` and `owner_withdraw`.
 2. **Mandatory Emergency Containment Recovery**: `recover()` requires 4 canonical custody remaining accounts and executes program-signed CPI `transfer_checked_signed` transferring exact excess volatile tokens directly to `policy.safe_destination`. The simulated fallback branch has been fully eliminated (`MissingCustodyAccounts` 6045).
 3. **Exact Token Conservation**: Program enforces exact on-chain balance conservation (`pre_balance == post_balance + sell_units`), strict risk reduction, and postcondition compliance.
-4. **Policy Freeze**: Snapshotting of `policy_version` during quarantine ensures policy cannot be modified mid-recovery (`PolicyFrozen` 6036).
+4. **Policy Freeze**: Snapshotting of `policy_version` during quarantine ensures policy cannot be modified mid-recovery (`PolicyFrozenDuringRecovery` 6036).
 5. **Pure Solver Engine**: Mathematical recovery calculation in `@sentinel/sdk` (`requiredRecoveryUnits`) computes minimal sell units required to satisfy postconditions without heuristics.
 6. **Autonomous Watcher & Solver Daemons**: Standalone Node.js background daemons (`scripts/watcher-daemon.mjs`, `scripts/solver-daemon.mjs`) continuously monitor RPC for invariant breaches and submit automated recovery transactions using `resolveRecoveryCustodyAccounts`.
-7. **Comprehensive Test Suite**: 26 Bankrun recovery tests, 13 Bankrun quarantine tests, 20 localnet tests, and 104 SDK unit tests (163 total automated integration/unit tests) all passing with 0 errors.
+7. **Comprehensive Test Suite**: 30 Rust unit tests, 110 SDK, 39 domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation-security, and 20 Anchor localnet tests (264 total) all passing with 0 errors.
 
 ---
 
@@ -46,7 +46,7 @@ The following capabilities are compiled in the Anchor program (`3TVEhBHwQNoEU1Vw
    - Permissionless violation detection re-evaluating vault portfolio against live Pyth feeds.
    - 2-stage hysteresis: First violation transitions vault to `PendingViolation` (`pending_violation_slot != 0`). If invariant remains breached across `confirm_slots`, transitions to `Quarantined`. If price recovers before confirmation, pending flag is automatically cleared.
    - While `Quarantined`, agent trade instructions fail closed with `VaultNotActive` (6025).
-   - Permissionless `expire_quarantine` transitions vault to `RecoveryExpired` (6029) once `current_slot > recovery_expires_slot`.
+   - Permissionless `expire_quarantine` transitions vault to the `RecoveryExpired` VaultStatus (6029 `RecoveryNotExpired` is the rejection when the window is still open) once `current_slot > recovery_expires_slot`.
    - Privileged `owner_release` allows vault owner to unfreeze vault back to `Active` and increment `recovery_nonce`.
 
 4. **Mandatory Recovery Custody (`recover`)**:
@@ -101,7 +101,7 @@ The following capabilities are compiled in the Anchor program (`3TVEhBHwQNoEU1Vw
 1. **DEX Swaps vs Containment**:
    - In production decentralized environments, full DEX rebalancing introduces unbounded slippage and sandwich risk during high-volatility shocks. Sentinel's onchain containment model moves excess risk directly to the owner's `safe_destination` (cold wallet or multisig) under exact token conservation. Live external DEX routing remains offchain.
 2. **Single Volatile Position Topology**:
-   - The current Anchor smart contract targets an institutional core topology of one primary volatile asset + USDC reserve. Multi-asset vaults enforce strict non-index single-asset bounds (`MultipleVolatileAssetsUnsupported` 6037).
+   - The current Anchor smart contract targets an institutional core topology of one primary volatile asset + USDC reserve. Multi-asset vaults enforce strict non-index single-asset bounds (`InvalidVolatileAssetConfiguration` 6037).
 3. **Solver Incentive Distribution**:
    - Solver bounty calculation is emitted deterministically in event logs; direct token payment escrow is scheduled for post-CWF mainnet protocol upgrades.
 

@@ -131,6 +131,31 @@ pub mod sentinel {
         require!(min_stablecoin_bps <= 10_000, SentinelError::InvalidPolicyBounds);
         require!(max_slippage_bps <= 10_000, SentinelError::InvalidPolicyBounds);
 
+        // Same cross-field coherence enforced by `initialize_policy`. Without
+        // these on the update path, an owner could relax the policy after the fact
+        // into a configuration that silently disables the guardrails:
+        //   * `max_single == 10000` with `min_stable == 0` makes
+        //     `check_exposure_and_reserve` unfailable, so `flag_violation` can
+        //     only ever return `NoViolation` and quarantine becomes unreachable.
+        //   * `max_single <= OVERSELL_BAND_BPS` saturates the oversell guard's
+        //     lower bound to zero, letting a permissionless `recover()` move the
+        //     entire tracked position to `safe_destination`.
+        require!(
+            max_single_asset_bps < 10_000,
+            SentinelError::InvalidPolicyBounds
+        );
+        require!(
+            max_single_asset_bps
+                .checked_add(min_stablecoin_bps)
+                .ok_or(SentinelError::InvalidPolicyBounds)?
+                <= 10_000,
+            SentinelError::InvalidPolicyBounds
+        );
+        require!(
+            max_single_asset_bps > OVERSELL_BAND_BPS,
+            SentinelError::InvalidPolicyBounds
+        );
+
         let policy = &mut ctx.accounts.policy;
         policy.max_single_asset_bps = max_single_asset_bps;
         policy.min_stablecoin_bps = min_stablecoin_bps;
@@ -208,23 +233,27 @@ pub mod sentinel {
         let vault = &mut ctx.accounts.vault;
         require!(vault.status == VaultStatus::Active, SentinelError::VaultNotActive);
 
-        // Enforce the same invariant postcondition as `execute_guarded_trade`.
-        // Without this, an owner-asserted sync could write `usdc_balance_cents = 0`
-        // and leave the vault 100% concentrated in one asset — a total bypass of
-        // the concentration cap and stablecoin floor. It also desynchronized the
-        // ledger from real SPL custody, and because every custody path asserts
-        // exact balance equality, that desync was permanent and unrecoverable.
+        // `sync_vault` REPORTS the portfolio; it does not choose it. It is the
+        // owner's declaration of what the vault currently holds, and the ledger
+        // must be allowed to record a genuinely non-compliant portfolio — that is
+        // precisely the state `flag_violation` exists to detect and quarantine.
+        //
+        // Rejecting a violating sync here would be actively unsafe: it would
+        // censor the violation before the watcher could ever observe it, leaving
+        // a real breach unflagged. Concentration and reserve are therefore
+        // enforced on `execute_guarded_trade`, which CHOOSES new positions —
+        // not here, which only restates existing ones.
+        //
+        // The real hazard on this path is custody desync: the ledger drifting from
+        // real SPL balances. That is prevented by the exact-equality assertions on
+        // the `owner_deposit` / `owner_withdraw` / `recover` custody paths, not by
+        // an invariant check here.
+        //
+        // What IS enforced: the owner's policy must be active. A policy is frozen
+        // during quarantine, so ledger state cannot be rewritten while a recovery
+        // is in flight.
         let policy = &ctx.accounts.policy;
-        let target_cents = positions[0]
-            .amount_units
-            .checked_mul(positions[0].price_cents)
-            .ok_or(SentinelError::MathOverflow)?;
-        let total_cents = usdc_balance_cents
-            .checked_add(target_cents)
-            .ok_or(SentinelError::MathOverflow)?;
-        if total_cents > 0 && positions[0].amount_units > 0 {
-            check_exposure_and_reserve(policy, target_cents, total_cents, usdc_balance_cents)?;
-        }
+        require!(policy.is_active, SentinelError::PolicyInactive);
 
         vault.usdc_balance_cents = usdc_balance_cents;
         vault.positions = positions;

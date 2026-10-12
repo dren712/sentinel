@@ -173,7 +173,7 @@ Agent Intelligence ➔ Sentinel Policy Postconditions ➔ SVM Execution ➔ Sola
 
 | Artifact | On-Chain Address / Signature | Explorer |
 | :--- | :--- | :--- |
-| **Sentinel CWF Program (Authoritative)** | `3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH` — deployed build is byte-identical to this source tree (SHA-256 `49769774311dd89a…`) | [CWF Program](https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH?cluster=devnet) |
+| **Sentinel CWF Program (Authoritative)** | `3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH` — deployed build is byte-identical to this source tree (SHA-256 `9328a505f1152d4b…`) | [CWF Program](https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH?cluster=devnet) |
 | **Pre-CWF Baseline Program (superseded)** | `3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK` — retired; it implements the earlier promise-based portfolio model and has **no** `flag_violation`, `recover`, or SPL custody | [Baseline Program](https://explorer.solana.com/address/3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK?cluster=devnet) |
 | **Live Railway Deployment** | `sentinel-finance-production-4560.up.railway.app` | [Live Production App](https://sentinel-finance-production-4560.up.railway.app/) |
 | **PolicyAccount PDA** (full lifecycle demo) | `7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm` | [Policy PDA](https://explorer.solana.com/address/7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm?cluster=devnet) |
@@ -231,24 +231,29 @@ Every number below is the exact count reported by the command shown. All 264 pas
 | Bankrun recovery (slot-warped, real SPL custody) | 26 | `node --experimental-strip-types --test tests/bankrun-recovery.test.ts` |
 | Bankrun quarantine (slot-warped) | 13 | `node --experimental-strip-types --test tests/bankrun-quarantine.test.ts` |
 | Remediation / oracle fail-closed security | 26 | `node --experimental-strip-types --test tests/remediation-security.test.ts` |
-| Anchor localnet integration | 20 | `node --experimental-strip-types --test tests/sentinel-localnet.test.ts` |
 | Rust program unit tests | 30 | `cargo test --manifest-path programs/sentinel/Cargo.toml` |
+| Anchor localnet integration *(requires `anchor localnet`)* | 20 | `node --experimental-strip-types --test tests/sentinel-localnet.test.ts` |
 | **Total** | **264** | |
+
+> **On the localnet suite:** those 20 tests require a running local validator. Without one they are **no-ops that report as passed** — each begins with `if (!isLocalnetAvailable) return;`. So the number that genuinely executes the program binary in-process is **244**, not 264. We are stating this rather than letting the inflated figure pass silently.
 
 ```bash
 # One command runs the 149 TypeScript tests (SDK 110 + domain 39)
 pnpm test
 
-# Rebuild the program binary before running the Bankrun suites — they load
-# ./target/deploy/sentinel.so, not ./programs/sentinel/target/deploy/sentinel.so.
+# 65 integration tests execute the real program binary in-process
 (cd programs/sentinel && cargo build-sbf) && cp programs/sentinel/target/deploy/sentinel.so target/deploy/sentinel.so
-
 node --experimental-strip-types --test tests/bankrun-recovery.test.ts
 node --experimental-strip-types --test tests/bankrun-quarantine.test.ts
 node --experimental-strip-types --test tests/remediation-security.test.ts
-node --experimental-strip-types --test tests/sentinel-localnet.test.ts   # requires a local validator
 cargo test --manifest-path programs/sentinel/Cargo.toml
+
+# The remaining 20 require a local validator first
+anchor localnet
+node --experimental-strip-types --test tests/sentinel-localnet.test.ts
 ```
+
+> **Toolchain note:** deploying this program requires **Solana CLI 2.x**. The 1.18.x line mis-sizes the program buffer by 10 bytes and fails with `account data too small for instruction`.
 
 ---
 
@@ -264,9 +269,9 @@ shasum -a 256 deployed.so target/deploy/sentinel.so   # identical
 | | |
 | :--- | :--- |
 | Program | `3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH` |
-| Deploy TX | [`5SDRSNRd…`](https://explorer.solana.com/tx/5SDRSNRdynxPSHEyyT5jy6ivMSkpAQmjihMcFXRMgF6kuDtFxU9NpDTZk6PLgE18Wo8oW3D4DkwErKdBoh79tQxU?cluster=devnet) |
-| Size | 544,000 bytes |
-| SHA-256 | `49769774311dd89acc1b07d173ad35337ec9ac444c5bb7e35dbd74b8d2e0b127` |
+| Deploy TX | [`xsrfF792…`](https://explorer.solana.com/tx/xsrfF792oqxwfpb5cMCwkM6N83muofnNU9MxSYF27EqvMCHWpSJfhCHwssoNKeANZWPtFzTqG5hTo4vSY6kQ8Fs?cluster=devnet) |
+| Size | 476,264 bytes |
+| SHA-256 | `9328a505f1152d4bc7c97452a820856b4df1297df02dbdaba351874cfd09b5a9` |
 | Upgrade authority | `GR9CtiUswZtay68U2fGqcDeB1dg8sHtpVi9kk2nCEwzw` |
 
 The three hardening changes described above — oracle slot binding, recovery liveness, and `sync_vault` invariant coverage — are therefore **live on-chain**, not just in source:

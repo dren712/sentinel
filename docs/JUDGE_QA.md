@@ -70,19 +70,19 @@ Both the watcher and solver services enforce the same fail-closed rule off-chain
 
 ### Q10: "Can an outsider freeze my vault by replaying an older price?"
 
-**Not anymore — this was a real finding, and we fixed it before submitting.**
+**Not anymore — this was a real finding, we found it in our own audit, and we fixed and deployed it.**
 
-`flag_violation` is deliberately permissionless: anyone can submit it. That is the feature. But the deployed build evaluated the vault against a caller-chosen Pyth account, and Pyth Receiver price-update accounts are ephemeral — anybody can materialize one from any genuine publisher-signed print from the last 60 seconds. A vault sitting just under its cap could therefore be pushed into `Quarantined` by replaying a print from a moment when it was over. No funds move, but the agent is locked out, and with no bond, fee, or cooldown the vault could be re-quarantined repeatedly.
+`flag_violation` is deliberately permissionless: anyone can submit it. That is the feature. But the original build evaluated the vault against a caller-chosen Pyth account, and Pyth Receiver price-update accounts are ephemeral — anybody can materialize one from any genuine publisher-signed print from the last 60 seconds. A vault sitting just under its cap could therefore be pushed into `Quarantined` by replaying a print from a moment when it was over. No funds move, but the agent is locked out, and with no bond, fee, or cooldown the vault could be re-quarantined repeatedly.
 
-The fix binds each consumed price to the slot that consumes it (`check_pyth_slot_lag`, ≤64 slots). Only the currently-live oracle shard can be used now, so the caller no longer gets to choose the print. Regression test: `test_pyth_slot_lag_rejects_replayed_ephemeral_update`.
+The fix binds each consumed price to the slot that consumes it (`check_pyth_slot_lag`, ≤64 slots), so only the currently-live oracle shard can be used and the caller no longer gets to choose the print. Regression test: `test_pyth_slot_lag_rejects_replayed_ephemeral_update`.
 
-We are flagging this because it exists in the **deployed** devnet build. See [Program Version Boundary](../README.md#program-version-boundary).
+**This fix is live on-chain, not just in source.** The deployed Devnet binary is SHA-256 identical to this repository — see [Program Version Boundary](../README.md#program-version-boundary).
 
 ---
 
 ### Q11: "Is there a state where the vault can never be recovered?"
 
-**We found one and fixed it.** `recover()` enforces two conditions: post-exposure must be strictly below pre-exposure, and the oversell guard requires post-exposure to stay within 500 bps of the cap. Those are mutually unsatisfiable when `pre_exposure < max_single_asset_bps − 500bps`.
+**We found one and fixed it — also deployed.** `recover()` enforces two conditions: post-exposure must be strictly below pre-exposure, and the oversell guard requires post-exposure to stay within 500 bps of the cap. Those are mutually unsatisfiable when `pre_exposure < max_single_asset_bps − 500bps`.
 
 `pre_exposure_bps` is recomputed from the **live price at recovery time**, not frozen at quarantine. So a vault quarantined at 3000 bps whose asset rallied back to 1800 bps would find that no `sell_units` value could ever satisfy both conditions — the permissionless solver path would be permanently unavailable and only the owner could release the vault.
 
@@ -96,11 +96,12 @@ One residual asymmetry worth stating: `RecoveryExpired` is effectively owner-onl
 
 Yes, and deliberately so — a risk-control system the owner cannot override is not a portfolio tool, it is a loss of access.
 
-- `owner_release` returns a `Quarantined` vault to `Active` **without verifying the portfolio is compliant**. It is an override, not a repair.
-- `owner_deposit` / `owner_withdraw` move real SPL custody. As of this submission they do not re-check concentration and reserve after the movement; detection is post-hoc via `flag_violation`.
+- `owner_release` returns a `Quarantined` vault to `Active` **without verifying the portfolio is compliant**. It is an override, not a repair. A non-compliant release can be re-flagged, since `flag_violation` is permissionless.
+- `owner_deposit` / `owner_withdraw` move real SPL custody. They do not re-check concentration and reserve after the movement; detection is post-hoc via `flag_violation`.
 - `update_policy` is blocked during quarantine (enforced both in the instruction body and as an account constraint), so **the containment destination cannot be swapped mid-recovery** — this one is deliberately closed.
+- Both `initialize_policy` and `update_policy` now reject degenerate configurations — a 100% concentration cap, bounds that cannot both be satisfied, or a cap at or below the oversell band — that would silently disable the guardrails or the quarantine mechanism entirely.
 
-`flag_violation` remains permissionless even after owner release, so an override that leaves the vault non-compliant can be re-quarantined. See [Program Version Boundary](../README.md#program-version-boundary) for which of these are fixed in source versus the deployed build.
+**What is enforced against the owner:** `sync_vault` requires an active policy (policies are frozen during quarantine, so ledger state cannot be rewritten mid-recovery), the vault must be `Active`, and every custody path asserts exact balance equality against the real SPL account. What is *not* enforced: the owner may write a non-compliant portfolio into the ledger — and that is deliberate. `sync_vault` reports reality; it does not choose it. Censoring a real violation there would stop the watcher from ever observing it.
 
 ---
 

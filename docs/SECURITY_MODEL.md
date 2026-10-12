@@ -8,7 +8,7 @@ The traditional delegation paradigm in decentralized finance forces a dangerous 
 
 **Sentinel's Guarantee**:
 > **Delegation without loss of control.**
-> The autonomous agent operates freely within a mathematically bounded state space. The on-chain Solana Anchor program authoritatively enforces financial postconditions at the transaction boundary. Even if the agent model is entirely compromised or hallucinates wildly, it **cannot commit any state transition that breaches the user's policy invariants**.
+> The autonomous agent operates freely within a mathematically bounded state space. The on-chain Solana Anchor program authoritatively enforces financial postconditions at the transaction boundary. Even if the agent model is entirely compromised or hallucinates wildly, it **cannot commit a state transition that breaches the user's policy invariants through `execute_guarded_trade`**. See the explicit capability boundary in README.md: the owner retains override authority via `owner_release`, and `sync_vault` may record a non-compliant portfolio — deliberately, since censoring a real violation there would stop the watcher from observing it.
 
 ---
 
@@ -16,8 +16,8 @@ The traditional delegation paradigm in decentralized finance forces a dangerous 
 
 | Threat Vector | Attack Scenario | Sentinel Mitigation Layer | On-Chain Failure Code |
 | :--- | :--- | :--- | :--- |
-| **Model Concentration Drift** | Agent hallucinates or chases a momentum spike, attempting to allocate 40% of the portfolio into a single volatile equity. | Anchor program mutates vault ledger and recalculates position weight in `u128`. If `target_bps > policy.max_single_asset_bps`, the instruction aborts immediately. | `ERR_EXPOSURE_EXCEEDED` (`SentinelError::ExposureCeilingExceeded`) |
-| **Cash Reserve Depletion** | High-frequency trading attempts drain USDC reserves to 5%, leaving the portfolio vulnerable to liquidity crunches. | Anchor program verifies `reserve_bps >= policy.min_stablecoin_bps`. If USDC falls below the floor, the instruction reverts. | `ERR_STABLECOIN_RESERVE_BREACHED` (`SentinelError::ReserveFloorBreached`) |
+| **Model Concentration Drift** | Agent hallucinates or chases a momentum spike, attempting to allocate 40% of the portfolio into a single volatile equity. | Anchor program mutates vault ledger and recalculates position weight in `u128`. If `target_bps > policy.max_single_asset_bps`, the instruction aborts immediately. | `ERR_EXPOSURE_EXCEEDED` (`SentinelError::ExposureExceeded` (6000)) |
+| **Cash Reserve Depletion** | High-frequency trading attempts drain USDC reserves to 5%, leaving the portfolio vulnerable to liquidity crunches. | Anchor program verifies `reserve_bps >= policy.min_stablecoin_bps`. If USDC falls below the floor, the instruction reverts. | `ERR_STABLECOIN_RESERVE_BREACHED` (`SentinelError::StablecoinReserveBreached` (6001)) |
 | **Runaway Sizing Attack** | Compromised agent attempts to dump the entire portfolio ($100k) in a single massive market order. | Invariant C checks `trade_amount_cents <= policy.max_trade_value_usd * 100`. Any oversized order is rejected. | `ERR_TRADE_SIZE_EXCEEDED` (`SentinelError::TradeSizeExceeded`) |
 | **MEV Sandwich & Illiquid Slippage** | Searchers sandwich a stock swap, or agent trades into an illiquid AMM pool suffering 5% slippage. | Invariant D computes `\|exec - quoted\| * 10,000 / quoted` in `u128`. If slippage > `max_slippage_bps` (e.g. 100 bps), transaction reverts atomically. | `ERR_SLIPPAGE_EXCEEDED` (`SentinelError::SlippageExceeded`) |
 | **Stale Policy Exploitation** | Agent tries executing an intent generated under an old, looser policy after the user tightened their invariants. | Promise and Vault accounts enforce `has_one = policy`, and the program verifies `policy.is_active` and policy version freshness. | `ERR_STALE_POLICY` (`SentinelError::PolicyInactive`) |
@@ -37,7 +37,7 @@ The traditional delegation paradigm in decentralized finance forces a dangerous 
    Solana transactions are atomic. When `execute_guarded_trade` returns `Err(...)`:
    - All balance updates inside `PortfolioVault` are discarded by the Solana runtime.
    - Zero SPL tokens or USDC are transferred.
-   - The user's capital is 100% preserved.
+   - On this path no SPL token or USDC moves, and the transaction reverts atomically. The owner's aggregate market exposure is unchanged either way; see the capability boundary in README.md.
 
 ---
 

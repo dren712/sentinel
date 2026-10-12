@@ -159,7 +159,7 @@ function RoboMascot({ onRun, isRunning }: { onRun: () => void; isRunning: boolea
         type="button"
         onClick={onRun}
         disabled={isRunning}
-        aria-label="Run the quarantine flow on Solana Devnet"
+        aria-label="Run the decision-cycle demo"
         aria-busy={isRunning}
         className="sentinel-focus sentinel-interactive relative flex aspect-square w-full max-w-[288px] items-center justify-center rounded-2xl"
         style={{ background: 'var(--sentinel-surface)', border: '1px solid var(--sentinel-border)' }}
@@ -285,12 +285,12 @@ const copySnippet = async () => {
                     className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"
                     aria-hidden
                   />
-                  Running on-chain flow
+                  Running decision cycle
                 </>
               ) : (
                 <>
                   <Play size={15} aria-hidden />
-                  Run the quarantine flow
+                  Run the decision-cycle demo
                 </>
               )}
             </button>
@@ -311,7 +311,7 @@ const copySnippet = async () => {
           </div>
 
           <p className="type-metadata mt-4">
-            264 automated tests · 85 integration tests executing the real program binary · no
+            264 automated tests · 65 executing the real program binary in-process · no
             third-party audit
           </p>
           </div>
@@ -484,7 +484,7 @@ const copySnippet = async () => {
             className="mt-4 rounded-lg p-5"
             style={{ background: 'var(--sentinel-surface-muted)', border: '1px solid var(--sentinel-border)' }}
           >
-            <div className="type-micro-label">State machine — the actual enum</div>
+            <div className="type-micro-label">VaultStatus enum · plus a pending flag</div>
             <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2">
               {['Active', 'PendingViolation', 'Quarantined', 'Active', 'RecoveryExpired'].map(
                 (s, i) => (

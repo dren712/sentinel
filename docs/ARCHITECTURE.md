@@ -99,7 +99,7 @@ Solana Explorer: https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ
                                      ▼
 ┌───────────────────────────────────────────────────────────────────────────────────┐
 │                        ON-CHAIN ENFORCEMENT BOUNDARY                              │
-│  programs/sentinel (Solana Anchor Program: 3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9k)│
+│  programs/sentinel (Solana Anchor Program: 3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH)│
 │                                                                                   │
 │   Account Context: execute_guarded_trade                                          │
 │   1. [mut]     promise:   PromiseAccount PDA                                      │
@@ -159,8 +159,8 @@ Solana Explorer: https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ
 
 | Package / Directory | Purpose | Verified Tests |
 | :--- | :--- | :--- |
-| `programs/sentinel` | Authoritative Anchor program with `u128` invariant checks and PDA state vaults. | 28 Cargo unit + 50 Anchor integration/bankrun tests |
-| `packages/domain` | Pure TypeScript business logic: basis point math, 6-verifier SWARM, PROVN evidence receipts. | 43 unit tests |
-| `packages/sdk` | Client SDK: `SentinelClient`, 10-stage autonomous reactive loop, Meteora & PreStocks adapters. | 54 unit & integration tests |
-| `tests` | Anchor localnet (20), Bankrun quarantine (13), and Bankrun recovery (17) suites. | 50 tests |
-| `apps/web` | Institutional Next.js 15 Web Application (Portfolio, Agent, Protection, Quarantine, Activity). | Production build passing (9/9 routes) |
+| `programs/sentinel` | Authoritative Anchor program with `u128` invariant checks and PDA state vaults. | 30 Cargo unit tests |
+| `packages/domain` | Pure TypeScript business logic: basis point math, 6-verifier SWARM, PROVN evidence receipts. | 39 unit tests |
+| `packages/sdk` | Client SDK: `SentinelClient`, 10-stage autonomous reactive loop, Meteora & PreStocks adapters. | 110 unit & integration tests |
+| `tests` | Bankrun recovery (26), Bankrun quarantine (13), remediation security (26), and Anchor localnet (20) suites. | 85 tests |
+| `apps/web` | Institutional Next.js 15 Web Application (Portfolio, Agent, Protection, Quarantine, Activity). | Production build passing; 3 page routes and 14 API routes |
