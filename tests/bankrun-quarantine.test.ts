@@ -16,6 +16,11 @@ const idl = JSON.parse(fs.readFileSync(path.resolve('target/idl/sentinel.json'),
 /**
  * Builds a serialized PriceUpdateV2 account binary buffer matching Pyth Solana Receiver V2
  */
+
+// Tracks the bankrun clock so synthetic Pyth fixtures carry a realistic
+// `posted_slot` (see `syncPricePostedSlots` and `check_pyth_slot_lag`).
+let CURRENT_SLOT = 0n;
+
 function buildPriceUpdateV2Buffer(options: {
   writeAuthority?: PublicKey;
   verificationLevel?: 'Full' | 'Partial';
@@ -58,7 +63,7 @@ function buildPriceUpdateV2Buffer(options: {
   emaConfBuf.writeBigUInt64LE(options.conf !== undefined ? BigInt(options.conf) : 50_000_000n);
 
   const slotBuf = Buffer.alloc(8);
-  slotBuf.writeBigUInt64LE(options.postedSlot || 100n);
+  slotBuf.writeBigUInt64LE(options.postedSlot || CURRENT_SLOT);
 
   return Buffer.concat([
     disc,
@@ -241,6 +246,32 @@ describe('Phase B: Quarantine State Machine Bankrun Test Suite (B7)', () => {
     ];
 
     ctx = await startAnchor('.', [{ name: 'sentinel', programId: PROGRAM_ID }], initialAccounts);
+
+    // Pyth Receiver price-update accounts are ephemeral and the program binds each
+    // consumed price to the slot it was posted in (`check_pyth_slot_lag`), so the
+    // fixtures must track the bankrun clock instead of hardcoding a fixed slot.
+    const priceAccounts = new Map<string, { pubkey: PublicKey; lamports: number; base: Buffer }>();
+    for (const acc of initialAccounts) {
+      if (acc.info.owner.equals(PYTH_RECEIVER_ID)) {
+        priceAccounts.set(acc.address.toBase58(), {
+          pubkey: acc.address,
+          lamports: acc.info.lamports,
+          base: Buffer.from(acc.info.data),
+        });
+      }
+    }
+    const originalWarpToSlot = ctx.warpToSlot.bind(ctx);
+    (ctx as any).warpToSlot = (slot: bigint) => {
+      originalWarpToSlot(slot);
+      CURRENT_SLOT = slot;
+      const slotBuf = Buffer.alloc(8);
+      slotBuf.writeBigUInt64LE(slot);
+      for (const { pubkey, lamports, base } of priceAccounts.values()) {
+        const data = Buffer.from(base);
+        slotBuf.copy(data, data.length - 8); // posted_slot is the trailing u64
+        ctx.setAccount(pubkey, { lamports, data, owner: PYTH_RECEIVER_ID, executable: false });
+      }
+    };
 
     const dummyWallet = {
       publicKey: owner.publicKey,

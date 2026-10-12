@@ -305,6 +305,7 @@ export async function setupDevnetSandbox(
       ])
       .accounts({
         vault: vaultPda,
+        policy: policyPda,
         owner: authority.publicKey,
       })
       .rpc();
@@ -413,6 +414,7 @@ export async function runDevnetIncident(
     ])
     .accounts({
       vault: vaultPda,
+      policy: policyPda,
       owner: authority.publicKey,
     })
     .rpc();

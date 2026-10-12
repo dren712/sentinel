@@ -1,7 +1,6 @@
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { SENTINEL_IDL } from '../idl/sentinel-idl';
-import type { Sentinel } from '../idl/sentinel';
 import { WalletSigner } from '../types';
 import { parsePythPriceUpdateAccount, PYTH_RECEIVER_ID } from '../custody';
 

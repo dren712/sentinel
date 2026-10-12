@@ -1,7 +1,6 @@
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { SENTINEL_IDL } from '../idl/sentinel-idl';
-import type { Sentinel } from '../idl/sentinel';
 import { requiredRecoveryUnits, RecoveryPlan } from '../recovery';
 import { WalletSigner } from '../types';
 import { resolveRecoveryCustodyAccounts, parsePythPriceUpdateAccount, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '../custody';

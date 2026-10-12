@@ -1,18 +1,28 @@
 # Sentinel Finance — Judge Q&A Defense Matrix
 
-This document provides concise, authoritative answers to the hardest technical and architectural questions judges and auditors ask about Sentinel Finance. Every claim maps directly to verified Devnet transactions and automated integration tests documented in [`docs/CLAIMS.md`](file:///Users/darshangaikwad/Desktop/stocklana/docs/CLAIMS.md).
+This document provides concise, authoritative answers to the hardest technical and architectural questions judges and auditors ask about Sentinel Finance. Every claim maps directly to verified Devnet transactions and automated integration tests documented in [`docs/CLAIMS.md`](./CLAIMS.md).
 
 ---
 
 ### Q1: "Why isn't this just a multisig or pre-trade simulation?"
 
-Multisigs require synchronous human approvals or off-chain co-signers that destroy autonomous execution velocity and leave windows open to market front-running and execution drift. Pre-trade simulation (`simulateTransaction`) is purely off-chain and advisory—it cannot prevent on-chain state changes between simulation and settlement. Sentinel implements an atomic on-chain postcondition firewall: the AI agent acts autonomously, but the Solana program deterministically verifies concentration, leverage, and drawdown bounds inside the transaction itself, reverting atomically if any invariant is breached. *(See `CLAIMS.md` §1 & §3)*.
+Yes for the containment path, no for the trading path — and the distinction is worth understanding.
+
+**On-chain state transitions** are real. `execute_guarded_trade` computes the post-trade portfolio *inside the SVM*, from the mutated vault state rather than a caller-supplied projection, and reverts atomically if any invariant is breached. That is the same code path an attacker would have to attack to move value, and it is covered by 26 slot-warped Bankrun tests plus 30 Rust unit tests.
+
+**What is not real on the trading path:** settlement is ledger-only. The program mutates internal vault accounting (`usdc_balance_cents`, `AssetPosition[]`); it does not route to a DEX and does not move SPL tokens. On that path Sentinel is an enforcement and accounting boundary, not an execution venue.
+
+**What is real on the containment path:** `recover()` executes a program-signed SPL Token / Token-2022 CPI `transfer_checked_signed`, moving tokens out of vault PDA custody to the owner's `safe_destination`, and asserts the exact balance delta on *both* sides plus that the vault's raw balance equals its post-recovery unit count.
 
 ---
 
 ### Q2: "Can a rogue agent bypass your caps by manipulating prices?"
 
-No. In Phase 4, Sentinel removed all reliance on caller-supplied pricing: `execute_guarded_trade` reads verified Pyth Network `PriceUpdateV2` feed accounts directly on-chain. The program cryptographically validates feed IDs, enforces a 60-second freshness ceiling (`check_pyth_freshness`), bounds confidence intervals (`max_conf_bps`), and recalculates asset position valuations inside the SVM before checking policy limits. A rogue agent passing arbitrary prices fails on-chain with `PythPriceStale`, `PythConfidenceTooWide`, or `InvalidPythFeedId`. *(See `CLAIMS.md` §3 and Anchor integration tests in `tests/sentinel.ts`)*.
+No. Sentinel removed all reliance on caller-supplied pricing: `execute_guarded_trade` reads verified Pyth Network `PriceUpdateV2` feed accounts directly on-chain. The program validates that the account is owned by the Pyth receiver, requires `VerificationLevel::Full`, pins the 32-byte `feed_id`, enforces a 60-second publish-age ceiling (`check_pyth_freshness`), bounds confidence intervals to 200 bps (`check_pyth_confidence`), and binds the update to the consuming slot (`check_pyth_slot_lag`, ≤64 slots) before converting it to cents.
+
+That last check matters more than it looks. Pyth Receiver price-update accounts are *ephemeral* — anyone can create one from any genuine publisher-signed print. Checking `publish_time` alone therefore proves the print is recent, but not that it is the *live* one. The slot binding is what stops a caller from replaying an older, materially different, perfectly `Full`-verified print.
+
+A caller supplying an arbitrary price account fails on-chain with `UnverifiedPrice` (6024), `FeedMismatch` (6021), `StaleOracle` (6022), or `ConfidenceTooWide` (6023). *(See `programs/sentinel/src/lib.rs`, `parse_and_verify_pyth_price`; covered by `tests/remediation-security.test.ts` and `tests/bankrun-recovery.test.ts`.)*
 
 ---
 
@@ -44,13 +54,53 @@ Not necessarily. Containment reduces the *vault's* exposure and deprives the aut
 
 ### Q7: "Can someone front-run evidence or squat on promise accounts?"
 
-No. The `RecordEvidence` instruction strictly constrains the agent signer to match the promise record (`promise.agent == agent.key()`), preventing unauthenticated third parties from recording evidence for another agent's promise. Furthermore, `record_evidence` verifies that `verification_result` matches `promise.status` (3 for settled, 4 for rejected) and computes SHA-256 state hashes on-chain. Any attempt to front-run, squat, or submit mismatched evidence reverts with `VerificationMismatch` or Anchor seed constraint errors. *(See `CLAIMS.md` §2 & `programs/sentinel/src/lib.rs`)*.
+The `record_evidence` instruction binds the agent signer to the promise (`promise.agent == agent.key()`), so a third party cannot record evidence against another agent's promise. It also verifies that `verification_result` is consistent with `promise.status` (3 = settled, 4 = rejected) and stores SHA-256 state commitments on-chain.
+
+**What that evidence is and is not:** it is an *agent-attested* record, not an independently verified cryptographic proof of the state transition. The SHA-256 digests are supplied by the agent signer and computed off-chain in `@sentinel/domain` — the program stores them but does not contain a SHA-256 implementation and does not recompute them from vault state. A fully compromised `agent_authority` could therefore attach arbitrary digests to a genuinely settled promise. Treat PROVN receipts as an audit trail binding an actor to a claim, not as a proof the program verified. *(See `programs/sentinel/src/lib.rs`, `record_evidence`.)*
 
 ---
 
 ### Q8: "What happens if Pyth is stale or unavailable?"
 
-Sentinel enforces a strict fail-closed security posture: any stale feed, missing account, or wide confidence interval causes an immediate transaction revert. Specifically, `parse_and_verify_pyth_price` checks the Pyth publish timestamp against the Solana Clock sysvar, reverting with `ErrorCode::StaleOracle` if older than 60 seconds, and `ErrorCode::ConfidenceTooWide` if uncertainty exceeds 200 bps tolerance. If Pyth data is unavailable, violation flagging and containment fail closed. *(See `CLAIMS.md` §3 & `programs/sentinel/src/lib.rs`)*.
+Sentinel enforces a strict fail-closed posture: any stale feed, missing account, replayed earlier print, or wide confidence interval causes an immediate transaction revert. `parse_and_verify_pyth_price` checks, in order: receiver ownership (`PYTH_RECEIVER_ID`), `VerificationLevel::Full`, `feed_id` equality, slot lag (`posted_slot` within 64 slots of the consuming slot), publish age (≤60s against the Solana `Clock`, with 10s forward-drift tolerance), and confidence (≤200 bps as a relative ratio). Failure modes revert with `UnverifiedPrice` (6024), `FeedMismatch` (6021), `StaleOracle` (6022), or `ConfidenceTooWide` (6023).
+
+Both the watcher and solver services enforce the same fail-closed rule off-chain and carry **no cached-price fallback** — if Pyth is unreachable they do nothing rather than act on a stale number. *(See `programs/sentinel/src/lib.rs` and `packages/sdk/src/services/`.)*
+
+---
+
+### Q10: "Can an outsider freeze my vault by replaying an older price?"
+
+**Not anymore — this was a real finding, and we fixed it before submitting.**
+
+`flag_violation` is deliberately permissionless: anyone can submit it. That is the feature. But the deployed build evaluated the vault against a caller-chosen Pyth account, and Pyth Receiver price-update accounts are ephemeral — anybody can materialize one from any genuine publisher-signed print from the last 60 seconds. A vault sitting just under its cap could therefore be pushed into `Quarantined` by replaying a print from a moment when it was over. No funds move, but the agent is locked out, and with no bond, fee, or cooldown the vault could be re-quarantined repeatedly.
+
+The fix binds each consumed price to the slot that consumes it (`check_pyth_slot_lag`, ≤64 slots). Only the currently-live oracle shard can be used now, so the caller no longer gets to choose the print. Regression test: `test_pyth_slot_lag_rejects_replayed_ephemeral_update`.
+
+We are flagging this because it exists in the **deployed** devnet build. See [Program Version Boundary](../README.md#program-version-boundary).
+
+---
+
+### Q11: "Is there a state where the vault can never be recovered?"
+
+**We found one and fixed it.** `recover()` enforces two conditions: post-exposure must be strictly below pre-exposure, and the oversell guard requires post-exposure to stay within 500 bps of the cap. Those are mutually unsatisfiable when `pre_exposure < max_single_asset_bps − 500bps`.
+
+`pre_exposure_bps` is recomputed from the **live price at recovery time**, not frozen at quarantine. So a vault quarantined at 3000 bps whose asset rallied back to 1800 bps would find that no `sell_units` value could ever satisfy both conditions — the permissionless solver path would be permanently unavailable and only the owner could release the vault.
+
+The oversell guard now applies only when the vault is genuinely breaching its cap, which preserves it where it does useful work and restores liveness where the market has already repaired the position. Strict improvement is still required in every case, so containment can never *increase* risk.
+
+One residual asymmetry worth stating: `RecoveryExpired` is effectively owner-only. `flag_violation` requires `Active` and `recover` requires `Quarantined`, so an expired vault can only be revived by `owner_release`. If the owner key were lost, the vault is frozen — there is no admin reset path.
+
+---
+
+### Q12: "Can the owner bypass the invariants?"
+
+Yes, and deliberately so — a risk-control system the owner cannot override is not a portfolio tool, it is a loss of access.
+
+- `owner_release` returns a `Quarantined` vault to `Active` **without verifying the portfolio is compliant**. It is an override, not a repair.
+- `owner_deposit` / `owner_withdraw` move real SPL custody. As of this submission they do not re-check concentration and reserve after the movement; detection is post-hoc via `flag_violation`.
+- `update_policy` is blocked during quarantine (enforced both in the instruction body and as an account constraint), so **the containment destination cannot be swapped mid-recovery** — this one is deliberately closed.
+
+`flag_violation` remains permissionless even after owner release, so an override that leaves the vault non-compliant can be re-quarantined. See [Program Version Boundary](../README.md#program-version-boundary) for which of these are fixed in source versus the deployed build.
 
 ---
 

@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <code>AUTHORIZED → UNSAFE → PROVEN → QUARANTINED → CONTAINED & REACTIVATED → EXPIRED</code>
+  <code>Active → PendingViolation → Quarantined → Active (recovered) / RecoveryExpired</code>
 </p>
 
 <p align="center">
@@ -52,25 +52,42 @@ While autonomous agents formulate trades and react to market signals, they opera
 > **Current Implementation Boundary**:
 > The current prototype does not execute DEX swaps or sell contained assets. A successful containment transfer reduces assets held inside the strategy-controlled vault, but does not by itself recover lost money or guarantee that the owner's total market exposure falls. Guarded trade settlement updates internal vault accounting; it does not route to an external DEX.
 
+### Explicit Capability Boundary
+
+| Capability | Status |
+| :--- | :--- |
+| Concentration cap / stablecoin floor / trade-size cap enforced **inside the SVM** | **Real** — `check_exposure_and_reserve`, verified by 30 Rust + 85 integration tests |
+| Pyth oracle verification (owner, `Full` level, `feed_id`, ≤60s publish age, ≤200bps confidence, ≤64 slot lag) | **Real** |
+| Two-stage quarantine with permissionless flagging and agent lockout | **Real** |
+| Program-signed SPL containment transfer to `safe_destination` with exact balance-delta assertions | **Real** |
+| Replay protection via recovery nonce | **Real** |
+| DEX execution / swap routing | **Not implemented** |
+| Selling or liquidating contained assets | **Not implemented** |
+| On-chain SHA-256 evidence verification | **Not implemented** — hashes are agent-supplied and computed off-chain |
+| Liquidity / price-impact admission checks | **Off-chain only**, against configured parameters |
+| Meteora pool PDA derivation | **Real (deterministic)**; pool depth/impact values are configured constants |
+| Solver bounty payout | **Informational only** — emitted as `0`, no on-chain disbursement |
+| Autonomous watcher / solver daemons | **Implemented**, but **not started** by the Docker/Railway deployment; run via `pnpm watcher` / `pnpm solver` |
+
 ---
 
 ## The 30-Second Demo
 
-`Robo-01` proposes:
-`BUY NVDAx $15,000`
+The proof that matters is not a screenshot — it is a signed transaction on the authoritative program.
 
-Sentinel projects post-state invariants:
-```text
-NVDAx    20% → 35%      LIMIT 25%   ✕
-USDC     25% → 10%      MIN   20%   ✕
-Trade    —   → $15K     MAX   $10K  ✕
-```
-**`✕ BLOCKED`** — Transaction reverts before capital moves ([Devnet TX `Yj4VQjWB...`](https://explorer.solana.com/tx/Yj4VQjWBtjhYZZpUvKeeuoWRL674jDawZ3HKk4rysriGPumK1Mqz7sLuB59dGD8nk4L5z7aWe27nqqnTt1G91AB?cluster=devnet)).
+Sentinel's quarantine and containment state machine executed end-to-end on **Solana Devnet against the CWF program** (`3TVEhBHw...AgH`). These are real signatures, verifiable in one click:
 
-`Robo-01` reads the structured rejection, recalculates exact compliant headroom, and adapts to:
-`BUY NVDAx $5,000` (`NVDAx 20% → 25.0%`, `USDC 25% → 20.0%`).
+| Step | Instruction | Devnet TX |
+| :--- | :--- | :--- |
+| 1 | `initialize_policy` — owner sets risk bounds on-chain | [`2FY3x93L…`](https://explorer.solana.com/tx/2FY3x93L3j8Uz1Xi5pMutSre8ekUJq12PVtG1udVptvzN4ejWpJUPeeBi779mCUi9Fn62vPikgDUaKcftawzfErQ?cluster=devnet) |
+| 2 | `initialize_vault` — vault PDA bound to policy + agent | [`2oD6NEjx…`](https://explorer.solana.com/tx/2oD6NEjxX5GSjnVFbaaicfzQtm4zNgUCYDBtBVg5bnEUQyhUcQfPBQnRwZJAaZHZpPbbYG66bPj9HLeQCnHB9RA3?cluster=devnet) |
+| 3 | `flag_violation` #1 — permissionless watcher records pending violation | [`5vSfX1eq…`](https://explorer.solana.com/tx/5vSfX1eqkgoEh6GBBAc9WPZi6YMkXkGoZQLV53hWj2ZnsRctC3vAoLx7QMswzFrTTnTsHrKiQXsbTt5VkrosSssf?cluster=devnet) |
+| 4 | `flag_violation` #2 — after `confirm_slots`, vault → `Quarantined`, agent authority revoked | [`PDw3zefC…`](https://explorer.solana.com/tx/PDw3zefCFwawCf8K51vb1bCAGg3TQZ7nSah1ZRJg686BSJbYqZ8UV6okuy9cpvSpoPrFxrY5sSaJRHWhChJ6qpE?cluster=devnet) |
+| 5 | `recover` — **any caller** moves excess tokens via program-signed SPL CPI, vault returns to `Active` | [`2zUD46Fq…`](https://explorer.solana.com/tx/2zUD46Fqo6NrzVh5E6Er9HZU9bfJZtHcFz62cchtQs1XR8bDM1WhKbRZTygJY4gyhJphRT2X2MUmWnUc4bZiWBob?cluster=devnet) |
 
-**`✓ APPROVED & SETTLED`** — Sentinel's on-chain `VaultAccount` state transition commits on Solana Devnet with a PROVN SHA-256 receipt ([Devnet TX `424aJbYW...`](https://explorer.solana.com/tx/424aJbYWGVFs6o8tDttYURYnZdBiFXtcbCGtHewF6uRBaj2oZ8sZmSDs25ws8r5dmMBH8fZGCw9w7Z8yTMj6mZvU?cluster=devnet)). Sentinel's PortfolioVault is an on-chain ledger that tracks balances and enforces invariants. Token settlement is simulated; tokens do not move between SPL accounts.
+While the vault is `Quarantined`, every trading instruction reverts with `VaultNotActive` (6025). The live [`/quarantine`](https://sentinel-finance-production-4560.up.railway.app/quarantine) terminal reads this state directly from chain.
+
+**Guarded trade settlement (`execute_guarded_trade`) is ledger-only.** It enforces post-trade invariants against a verified Pyth price and mutates internal vault accounting — it does not route to an external DEX, and SPL tokens do not move on this path. The containment path (`recover`) is where real token custody moves. See [Capability Boundary](#explicit-capability-boundary).
 
 ---
 
@@ -81,16 +98,16 @@ To provide complete technical transparency for judges, code auditors, and review
 | Dimension | Real On Solana Devnet (Authoritative) | Interactive Demo / Simulation Layer |
 | :--- | :--- | :--- |
 | **Anchor Program** | Dedicated CWF Solana Program ([`3TVEhBHw...`](https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH?cluster=devnet)) enforcing pre-trade guards, quarantine state transitions, and real SPL custody containment (`recover`) | Client-side what-if projection simulator on Overview |
-| **Account State** | On-chain `PolicyAccount`, `AgentAccount`, `PortfolioVault`, `PromiseAccount`, `EvidenceAccount` PDAs holding real SPL token custody | Simulated preview headroom calculations |
+| **Account State** | On-chain `PolicyAccount`, `AgentAccount`, `PortfolioVault` PDAs. SPL custody lives in separate PDA-owned token accounts passed to the program — the vault state account itself holds no token balance | Simulated preview headroom calculations |
 | **Policy Updates** | Signed by user's browser wallet (Phantom/Solflare) committing on Devnet RPC via Anchor | Local UI candidate state prior to on-chain signing |
-| **Emergency Containment** | Program-signed SPL Token & Token-2022 CPI `transfer_checked_signed` moving excess tokens to `policy.safe_destination` upon invariant breach | Informational solver bounty calculation in event |
-| **Flagship Rejection** | Real rejected $15K Devnet transaction ([TX `Yj4VQjWB...`](https://explorer.solana.com/tx/Yj4VQjWBtjhYZZpUvKeeuoWRL674jDawZ3HKk4rysriGPumK1Mqz7sLuB59dGD8nk4L5z7aWe27nqqnTt1G91AB?cluster=devnet)) | Preflight client-side rejection preview |
-| **Flagship Settlement** | Real $5K guarded `VaultAccount` state transition ([TX `424aJbYW...`](https://explorer.solana.com/tx/424aJbYWGVFs6o8tDttYURYnZdBiFXtcbCGtHewF6uRBaj2oZ8sZmSDs25ws8r5dmMBH8fZGCw9w7Z8yTMj6mZvU?cluster=devnet)) | Target allocation slider projection curves |
-| **Evidence Proofs** | PROVN SHA-256 on-chain evidence transaction ([TX `hZFTL14Y...`](https://explorer.solana.com/tx/hZFTL14Y17EQx44JskkbPMXEivsSWLDsaUfDtC6cAnmFAo84guhBLQ1ap2VV9ZQXbX334PdYiWfLmXxKjH1MNoF?cluster=devnet)) | Two-tier evidence receipt inspection drawer |
-| **Price Feeds** | Pyth Hermes v2 sub-second price streaming in `LIVE` mode (`https://hermes.pyth.network`) | Injected 140s stale-quote demo scenario |
-| **Sponsor Scenarios** | Meteora DBC deterministic pool PDA derivations; PreStocks 409A NAV normalization | Simulated shallow DBC pool impact (`1.7% > 1.0%`) & $30K OPENAIx breach |
+| **Emergency Containment** | Program-signed SPL Token & Token-2022 CPI `transfer_checked_signed` moving excess tokens from vault PDA custody to `policy.safe_destination`. This is a **separate permissionless call made after quarantine**, not an automatic hook on breach | Informational solver bounty calculation in event |
+| **Quarantine Lifecycle** | Real `initialize_policy` → `initialize_vault` → `flag_violation` ×2 → `recover` transactions on the CWF program ([`5vSfX1eq…`](https://explorer.solana.com/tx/5vSfX1eqkgoEh6GBBAc9WPZi6YMkXkGoZQLV53hWj2ZnsRctC3vAoLx7QMswzFrTTnTsHrKiQXsbTt5VkrosSssf?cluster=devnet) · [`PDw3zefC…`](https://explorer.solana.com/tx/PDw3zefCFwawCf8K51vb1bCAGg3TQZ7nSah1ZRJg686BSJbYqZ8UV6okuy9cpvSpoFrFxrY5sSaJRHWhChJ6qpE?cluster=devnet) · [`2zUD46Fq…`](https://explorer.solana.com/tx/2zUD46Fqo6NrzVh5E6Er9HZU9bfJZtHcFz62cchtQs1XR8bDM1WhKbRZTygJY4gyhJphRT2X2MUmWnUc4bZiWBob?cluster=devnet)) | Preflight client-side rejection preview |
+| **Guarded Trade Settlement** | On-chain invariant enforcement in `execute_guarded_trade` against verified Pyth prices, verified by 26 slot-warped Bankrun tests + Rust unit tests | Target allocation slider projection curves |
+| **Evidence Proofs** | `record_evidence` stores SHA-256 state commitments **supplied by the agent signer**. Hashes are computed off-chain in `@sentinel/domain` and are *agent-attested*, not derived or verified on-chain — the program does not contain a SHA-256 implementation | Two-tier evidence receipt inspection drawer |
+| **Price Feeds** | Pyth Hermes v2 sub-second price streaming in `LIVE` mode (`https://hermes.pyth.network`), re-verified on-chain via `PriceUpdateV2` ownership, `Full` verification level, `feed_id`, ≤60s publish age, ≤200 bps confidence, and ≤64 slot posting lag | Injected 140s stale-quote demo scenario |
+| **Sponsor Scenarios** | PreStocks 409A NAV normalization (server-side HTTP client). Meteora pool PDA derivation is deterministic but the liquidity/impact figures are configured constants, not live pool reads | Simulated shallow DBC pool impact (`1.7% > 1.0%`) & $30K OPENAIx breach |
 | **LLM Provider** | OpenAI GPT-4o function-calling supported when `OPENAI_API_KEY` is configured | Deterministic `DemoProvider` running on the hosted deployment |
-| **Persistence** | Railway Managed PostgreSQL read model (`agent_runs`, `decisions`, `executions`, `evidence_index`) | In-memory read model fallback when running locally without a database |
+| **Persistence** | Railway Managed PostgreSQL read model (`agent_runs`, `decisions`, `executions`, `evidence_indices`) | In-memory read model fallback when running locally without a database |
 
 ---
 
@@ -98,9 +115,11 @@ To provide complete technical transparency for judges, code auditors, and review
 
 | Threat | Example Trigger | Sentinel Outcome |
 | :--- | :--- | :--- |
-| **1. Untrusted Agent** | `BUY $15K NVDAx` (`35% > 25%` cap, `USDC 10% < 20%` floor) or `BUY $30K OPENAIx` (`Pre-IPO > 20%`) | Atomically blocked (`ERR_CONCENTRATION_LIMIT` / `ERR_PRE_IPO_EXPOSURE`); agent adapts to exact headroom (`$5K` / `$2K`). |
-| **2. Untrusted Data** | Pyth oracle quote is stale (`140s > 60s`) or Hermes is unreachable in `LIVE` mode | Fail-closed (`ERR_QUOTE_STALE` / `NO EXECUTION`); never falls back to synthetic prices in `DEVNET LIVE`. |
-| **3. Untrusted Market** | Meteora DBC pool depth is shallow (`$12K < $25K` floor) or spread exceeds `200 bps` | Blocked pre-execution by `LiquidityVerifier` (`MARKET_QUALITY_FAILURE`). |
+| **1. Untrusted Agent** | A trade whose post-state breaches `max_single_asset_bps` / `min_stablecoin_bps` / `max_trade_value_usd` | Reverts on-chain inside the SVM — `ExposureExceeded` (6000), `StablecoinReserveBreached` (6001), or `TradeSizeExceeded` (6002). |
+| **2. Untrusted Data** | Pyth quote older than 60s, wider than 200 bps confidence, posted more than 64 slots ago, or a replayed earlier print | Fail-closed — `StaleOracle` (6022), `ConfidenceTooWide` (6023), `FeedMismatch` (6021), `UnverifiedPrice` (6024). No synthetic-price fallback exists in `LIVE` mode. |
+| **3. Untrusted Market** | Liquidity depth below the floor or price impact above the limit | Blocked pre-execution by the market-quality verifier (`ERR_LIQUIDITY_DEPTH_INSUFFICIENT`, `ERR_PRICE_IMPACT_EXCEEDED`) before any on-chain state is touched. |
+
+> **Scope note on Failure Mode 3.** The liquidity and impact guards run **off-chain, in TypeScript, against configured venue parameters** — they are a pre-execution admission check, not an SVM-enforced invariant. Modes 1 and 2 are enforced inside the transaction.
 
 ---
 
@@ -116,7 +135,7 @@ To provide complete technical transparency for judges, code auditors, and review
            SOLANA_RPC_URL       ▼               ▼       DATABASE_URL
     ┌───────────────────────────────┐       ┌───────────────────────────────┐
     │      SOLANA DEVNET (TRUTH)    │       │   POSTGRESQL (READ HISTORY)   │
-    │  Program: 3gh1Cc...WEvAJK     │       │  1. agent_runs                │
+    │  Program: 3TVEhBHw...AgH     │       │  1. agent_runs                │
     │  • PolicyAccount PDA          │       │  2. decisions                 │
     │  • AgentAccount PDA           │       │  3. executions                │
     │  • VaultAccount PDA           │       │  4. portfolio_snapshots       │
@@ -155,14 +174,19 @@ Agent Intelligence ➔ Sentinel Policy Postconditions ➔ SVM Execution ➔ Sola
 | Artifact | On-Chain Address / Signature | Explorer |
 | :--- | :--- | :--- |
 | **Sentinel CWF Program (Authoritative)** | `3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH` | [CWF Program](https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH?cluster=devnet) |
-| **Sentinel Stocklana Baseline Program** | `3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK` | [Baseline Program](https://explorer.solana.com/address/3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK?cluster=devnet) |
+| **Pre-CWF Baseline Program (superseded)** | `3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK` — retired; it implements the earlier promise-based portfolio model and has **no** `flag_violation`, `recover`, or SPL custody | [Baseline Program](https://explorer.solana.com/address/3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK?cluster=devnet) |
 | **Live Railway Deployment** | `sentinel-finance-production-4560.up.railway.app` | [Live Production App](https://sentinel-finance-production-4560.up.railway.app/) |
-| **PolicyAccount PDA** | `3wTp1YDSG3xmf9TtuwZ64b11uLuLNUgQRwdesMbFJUUh` | [Policy PDA](https://explorer.solana.com/address/3wTp1YDSG3xmf9TtuwZ64b11uLuLNUgQRwdesMbFJUUh?cluster=devnet) |
-| **AgentAccount PDA (`robo-01`)** | `G9MwRFgstx8Ee4dC6CYLb4CuwhR5YXXpYUhbyHrsxSpv` *(Live/Hosted)* <br>`62vpHzSG92GUbAXtNh4czG6U6HyTpndrY4NvZM9euUnQ` *(Test Harness)* | [Live Agent PDA](https://explorer.solana.com/address/G9MwRFgstx8Ee4dC6CYLb4CuwhR5YXXpYUhbyHrsxSpv?cluster=devnet) · [Test PDA](https://explorer.solana.com/address/62vpHzSG92GUbAXtNh4czG6U6HyTpndrY4NvZM9euUnQ?cluster=devnet) |
-| **VaultAccount PDA** | `7TffMKzUgVme4eod8Wh9ANAQ3YrRMzj4c2JrfKm6AY4Y` | [Vault PDA](https://explorer.solana.com/address/7TffMKzUgVme4eod8Wh9ANAQ3YrRMzj4c2JrfKm6AY4Y?cluster=devnet) |
-| **Rejected `$15K` Trade Proof TX** | `Yj4VQjWBtjhYZZpUvKeeuoWRL674jDawZ3HKk4rysriGPumK1Mqz7sLuB59dGD8nk4L5z7aWe27nqqnTt1G91AB` | [View TX](https://explorer.solana.com/tx/Yj4VQjWBtjhYZZpUvKeeuoWRL674jDawZ3HKk4rysriGPumK1Mqz7sLuB59dGD8nk4L5z7aWe27nqqnTt1G91AB?cluster=devnet) |
-| **Settled `$5K` Adapted Trade TX** | `424aJbYWGVFs6o8tDttYURYnZdBiFXtcbCGtHewF6uRBaj2oZ8sZmSDs25ws8r5dmMBH8fZGCw9w7Z8yTMj6mZvU` | [View TX](https://explorer.solana.com/tx/424aJbYWGVFs6o8tDttYURYnZdBiFXtcbCGtHewF6uRBaj2oZ8sZmSDs25ws8r5dmMBH8fZGCw9w7Z8yTMj6mZvU?cluster=devnet) |
-| **PROVN Evidence Anchor TX** | `hZFTL14Y17EQx44JskkbPMXEivsSWLDsaUfDtC6cAnmFAo84guhBLQ1ap2VV9ZQXbX334PdYiWfLmXxKjH1MNoF` | [View TX](https://explorer.solana.com/tx/hZFTL14Y17EQx44JskkbPMXEivsSWLDsaUfDtC6cAnmFAo84guhBLQ1ap2VV9ZQXbX334PdYiWfLmXxKjH1MNoF?cluster=devnet) |
+| **PolicyAccount PDA** (full lifecycle demo) | `7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm` | [Policy PDA](https://explorer.solana.com/address/7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm?cluster=devnet) |
+| **VaultAccount PDA** (full lifecycle demo) | `DdaK1oEsBcCfsgyKoYbkhf8BkS927cRZDskvAvjJscrr` | [Vault PDA](https://explorer.solana.com/address/DdaK1oEsBcCfsgyKoYbkhf8BkS927cRZDskvAvjJscrr?cluster=devnet) |
+| **Quarantine → containment flow owner** | `6H5nrFrvoWtAjUE5M8D5XXUU7W6JNzfPkGmytSyA9K2z` | [Owner](https://explorer.solana.com/address/6H5nrFrvoWtAjUE5M8D5XXUU7W6JNzfPkGmytSyA9K2z?cluster=devnet) |
+| **`initialize_policy` TX** | `2FY3x93L3j8Uz1Xi5pMutSre8ekUJq12PVtG1udVptvzN4ejWpJUPeeBi779mCUi9Fn62vPikgDUaKcftawzfErQ` | [View TX](https://explorer.solana.com/tx/2FY3x93L3j8Uz1Xi5pMutSre8ekUJq12PVtG1udVptvzN4ejWpJUPeeBi779mCUi9Fn62vPikgDUaKcftawzfErQ?cluster=devnet) |
+| **`initialize_vault` TX** | `2oD6NEjxX5GSjnVFbaaicfzQtm4zNgUCYDBtBVg5bnEUQyhUcQfPBQnRwZJAaZHZpPbbYG66bPj9HLeQCnHB9RA3` | [View TX](https://explorer.solana.com/tx/2oD6NEjxX5GSjnVFbaaicfzQtm4zNgUCYDBtBVg5bnEUQyhUcQfPBQnRwZJAaZHZpPbbYG66bPj9HLeQCnHB9RA3?cluster=devnet) |
+| **`flag_violation` (pending) TX** | `5vSfX1eqkgoEh6GBBAc9WPZi6YMkXkGoZQLV53hWj2ZnsRctC3vAoLx7QMswzFrTTnTsHrKiQXsbTt5VkrosSssf` | [View TX](https://explorer.solana.com/tx/5vSfX1eqkgoEh6GBBAc9WPZi6YMkXkGoZQLV53hWj2ZnsRctC3vAoLx7QMswzFrTTnTsHrKiQXsbTt5VkrosSssf?cluster=devnet) |
+| **`flag_violation` (→ `Quarantined`) TX** | `PDw3zefCFwawCf8K51vb1bCAGg3TQZ7nSah1ZRJg686BSJbYqZ8UV6okuy9cpvSpoFrFxrY5sSaJRHWhChJ6qpE` | [View TX](https://explorer.solana.com/tx/PDw3zefCFwawCf8K51vb1bCAGg3TQZ7nSah1ZRJg686BSJbYqZ8UV6okuy9cpvSpoFrFxrY5sSaJRHWhChJ6qpE?cluster=devnet) |
+| **`recover` (SPL containment) TX** | `2zUD46Fqo6NrzVh5E6Er9HZU9bfJZtHcFz62cchtQs1XR8bDM1WhKbRZTygJY4gyhJphRT2X2MUmWnUc4bZiWBob` | [View TX](https://explorer.solana.com/tx/2zUD46Fqo6NrzVh5E6Er9HZU9bfJZtHcFz62cchtQs1XR8bDM1WhKbRZTygJY4gyhJphRT2X2MUmWnUc4bZiWBob?cluster=devnet) |
+| **`owner_release` TX** | `2tQQYGDpnBqttytdnYQ9JoFsVZMAbi2bLvgyKzamYUgE7oYha7PP9Cf59uTiEYxQ73Mxg5rbZtwCELqYzurktEZd` | [View TX](https://explorer.solana.com/tx/2tQQYGDpnBqttytdnYQ9JoFsVZMAbi2bLvgyKzamYUgE7oYha7PP9Cf59uTiEYxQ73Mxg5rbZtwCELqYzurktEZd?cluster=devnet) |
+
+> Every signature above was verified against `https://api.devnet.solana.com`: each invoked `3TVEhBHw...AgH` and committed successfully. The deployed program build predates the post-submission hardening described in [Program Version Boundary](#program-version-boundary).
 
 ---
 
@@ -172,7 +196,7 @@ Agent Intelligence ➔ Sentinel Policy Postconditions ➔ SVM Execution ➔ Sola
 | :--- | :--- | :--- |
 | **Pyth Network** | `PythLivePriceProvider` fetches live Hermes v2 prices/confidence/age (`NVDAx`/`NVDA`, `AAPLx`/`AAPL`, `SPYx`/`SPY`) and enforces fail-closed staleness (`≤ 60s`) & dual-feed peg deviation (`≤ 100 bps`) guards. | [docs/SPONSORS.md](./docs/SPONSORS.md#1-pyth-network-pythlivepriceprovider--dual-feed-tracking) |
 | **PreStocks** | Server-side `PreStocksApiClient` normalizes certified Pre-IPO assets (`OPENAIx`, `SPACEXx`, `STRIPEx`, `ANTHROPICx`) into an isolated universe and enforces the `Pre-IPO ≤ 20%` portfolio exposure ceiling. | [docs/SPONSORS.md](./docs/SPONSORS.md#2-prestocks-prestocksapiclient--pre-ipo-exposure-ceiling) |
-| **Meteora** | Derives canonical Meteora DBC pool PDAs (`4bHACh...`) and verifies pool liquidity depth (`≥ $25,000`) and price impact (`≤ 200 bps`) before Sentinel authorizes execution. *(Note: Devnet settlement occurs on the Sentinel VaultAccount after pre-trade Meteora verification rather than an on-chain Meteora swap CPI).* | [docs/SPONSORS.md](./docs/SPONSORS.md#3-meteora-meteoradbcmarketqualityverifier--pool-pda-derivation) |
+| **Meteora** | Derives canonical Meteora DBC pool PDAs (`4bHACh...`) as a market-admission check before execution — liquidity floor (`≥ $25,000`) and price impact (`≤ 200 bps`) against *configured venue parameters*. *(Off-chain pre-execution check, not an on-chain invariant and not a live pool read; no DBC swap CPI exists.)* | [docs/SPONSORS.md](./docs/SPONSORS.md#3-meteora-meteoradbcmarketqualityverifier--pool-pda-derivation) |
 
 ---
 
@@ -197,28 +221,48 @@ curl http://localhost:3000/api/health
 
 ---
 
-## Testing & Verification (`223 Automated Tests Passing + Solana Devnet Gate`)
+## Testing & Verification (`264 Automated Tests Passing`)
+
+Every number below is the exact count reported by the command shown. All 264 pass.
+
+| Suite | Tests | Command |
+| :--- | ---: | :--- |
+| SDK + domain | 149 | `pnpm test` |
+| Bankrun recovery (slot-warped, real SPL custody) | 26 | `node --experimental-strip-types --test tests/bankrun-recovery.test.ts` |
+| Bankrun quarantine (slot-warped) | 13 | `node --experimental-strip-types --test tests/bankrun-quarantine.test.ts` |
+| Remediation / oracle fail-closed security | 26 | `node --experimental-strip-types --test tests/remediation-security.test.ts` |
+| Anchor localnet integration | 20 | `node --experimental-strip-types --test tests/sentinel-localnet.test.ts` |
+| Rust program unit tests | 30 | `cargo test --manifest-path programs/sentinel/Cargo.toml` |
+| **Total** | **264** | |
 
 ```bash
-# Run all 110 unit, domain, SDK, watcher/solver, and adversarial security tests
+# One command runs the 149 TypeScript tests (SDK 110 + domain 39)
 pnpm test
 
-# Run slot-warped Bankrun test suites (26 recovery tests + 13 quarantine tests)
+# Rebuild the program binary before running the Bankrun suites — they load
+# ./target/deploy/sentinel.so, not ./programs/sentinel/target/deploy/sentinel.so.
+(cd programs/sentinel && cargo build-sbf) && cp programs/sentinel/target/deploy/sentinel.so target/deploy/sentinel.so
+
 node --experimental-strip-types --test tests/bankrun-recovery.test.ts
 node --experimental-strip-types --test tests/bankrun-quarantine.test.ts
-
-# Run CWF remediation security, policy verifier, oracle fail-closed & invariant suite (26 tests)
 node --experimental-strip-types --test tests/remediation-security.test.ts
-
-# Run Anchor localnet integration tests (20 tests)
-node --experimental-strip-types --test tests/sentinel-localnet.test.ts
-
-# Run Rust program unit tests (28 tests)
+node --experimental-strip-types --test tests/sentinel-localnet.test.ts   # requires a local validator
 cargo test --manifest-path programs/sentinel/Cargo.toml
-
-# Run live Solana Devnet P22/P23 verification gate
-node packages/sdk/scripts/verify-p22-p23-devnet.mjs
 ```
+
+---
+
+## Program Version Boundary
+
+Stating this plainly so nobody has to guess:
+
+- **Everything linked above was executed against the deployed devnet program `3TVEhBHw...AgH`.**
+- **The source in `programs/sentinel/` has since been hardened further.** The deployed build predates three post-submission changes:
+  1. **Oracle slot binding** — `parse_and_verify_pyth_price` now also requires `posted_slot` within `MAX_ORACLE_SLOT_LAG` (64 slots). Pyth price-update accounts are ephemeral, so publish-age alone let a caller choose *which* verified print the vault was judged against. Covered by `test_pyth_slot_lag_rejects_replayed_ephemeral_update`.
+  2. **Recovery liveness** — the oversell guard now applies only while the vault is genuinely breaching its cap. Previously, if the asset rallied between quarantine and recovery, `post < pre` and `post >= max_single − 500bps` became mutually unsatisfiable and **no** `sell_units` could recover the vault.
+  3. **Invariant coverage on `sync_vault`** — the ledger-sync path now re-checks concentration and reserve against the owner's `PolicyAccount` (a new required account on that instruction) instead of writing arbitrary positions unchecked.
+
+All 264 tests pass against the current source. **The deployed binary has not been upgraded with these three changes** — the devnet signatures above demonstrate the quarantine and containment state machine, which is unchanged.
 
 ---
 

@@ -26,7 +26,7 @@
   - Keeps the `PRESTOCKS_EXCLUSIVE_PRE_IPO` asset universe strictly isolated from public equities (`AAPLx`, `NVDAx`, `SPYx`).
 - **PreStocks Demo Scenario**:
   - Initial portfolio holds `18.0%` (`$18,000`) Pre-IPO exposure under a `20.0%` (`2000 bps`) Pre-IPO cap.
-  - Agent proposes `BUY $5,000 OPENAIx` (`18% → 23%`) $\rightarrow$ **BLOCKED** (`ERR_PRE_IPO_EXPOSURE_EXCEEDED`).
+  - Agent proposes `BUY $5,000 OPENAIx` (`18% → 23%`) $\rightarrow$ **BLOCKED** (`ERR_EXPOSURE_EXCEEDED`).
   - Agent reads remaining compliant headroom (`$2,000`) and adapts to `BUY $2,000 OPENAIx` (`18% → 20%`) $\rightarrow$ **APPROVED**.
 
 ---

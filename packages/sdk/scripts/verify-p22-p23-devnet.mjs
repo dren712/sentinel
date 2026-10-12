@@ -2,15 +2,25 @@
 /**
  * P22 & P23 — Live Solana Devnet + Pyth Hermès Verification Gate
  * Verifies all Core Devnet Checks, Sponsor Checks, and On-Chain Settlement & Rejection flows
- * against deployed program 3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK.
+ * against the authoritative CWF program 3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH.
+ *
+ * NOTE: the PDAs below are the pre-CWF baseline vault's accounts and are owned by the
+ * superseded program. Override via SENTINEL_POLICY_PDA / SENTINEL_AGENT_PDA /
+ * SENTINEL_VAULT_PDA to target the CWF program's accounts (see docs/VERIFICATION.md).
  */
 import { Connection, PublicKey } from '@solana/web3.js';
 
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
 const PROGRAM_ID = new PublicKey(process.env.SENTINEL_PROGRAM_ID || '3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH');
-const POLICY_PDA = new PublicKey('3wTp1YDSG3xmf9TtuwZ64b11uLuLNUgQRwdesMbFJUUh');
-const AGENT_PDA = new PublicKey('G9MwRFgstx8Ee4dC6CYLb4CuwhR5YXXpYUhbyHrsxSpv');
-const VAULT_PDA = new PublicKey('7TffMKzUgVme4eod8Wh9ANAQ3YrRMzj4c2JrfKm6AY4Y');
+const POLICY_PDA = new PublicKey(
+  process.env.SENTINEL_POLICY_PDA || '7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm'
+);
+const AGENT_PDA = new PublicKey(
+  process.env.SENTINEL_AGENT_PDA || '6H5nrFrvoWtAjUE5M8D5XXUU7W6JNzfPkGmytSyA9K2z'
+);
+const VAULT_PDA = new PublicKey(
+  process.env.SENTINEL_VAULT_PDA || 'DdaK1oEsBcCfsgyKoYbkhf8BkS927cRZDskvAvjJscrr'
+);
 
 const DEVNET_TXS = {
   initializePolicy: '5FStukmor2DmjU49o8s2LRxfHyp67rLzu2Ds3bbZQEg4KKKwpFcoAt14HQEvLgrkrPT1ZDtnnZGVrAbrBuE5HEnV',

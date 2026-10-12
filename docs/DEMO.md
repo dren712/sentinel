@@ -27,4 +27,4 @@ Trigger via **"Run 5-Step Demo"** in the header or `POST /api/agent/run`:
 2. **PreStocks Pre-IPO Cap Guard ("PreStocks Demo")**:
    - Proposes `BUY $30,000 OPENAIx` (`18% → 48% > 20%` Pre-IPO cap) $\rightarrow$ **BLOCKED**, then auto-adapts to `$2,000` (`18% → 20.0%`) $\rightarrow$ **SETTLED**.
 3. **Meteora Liquidity Floor Guard ("Meteora Demo")**:
-   - Simulates a shallow DBC pool (`$12,000 < $25,000` floor) $\rightarrow$ **BLOCKED** by `LiquidityVerifier` (`MARKET_QUALITY_FAILURE`).
+   - Simulates a shallow DBC pool (`$12,000 < $25,000` floor) $\rightarrow$ **BLOCKED** by the market-quality verifier (`ERR_LIQUIDITY_DEPTH_INSUFFICIENT`).

@@ -58,7 +58,12 @@ async function main() {
     [Buffer.from('vault'), ownerKeypair.publicKey.toBuffer()],
     PROGRAM_ID
   );
+  const [policyPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from('policy'), ownerKeypair.publicKey.toBuffer()],
+    PROGRAM_ID
+  );
   console.log(`[+] Vault PDA:       ${vaultPda.toBase58()}`);
+  console.log(`[+] Policy PDA:      ${policyPda.toBase58()}`);
 
   const idlPath = new URL('../../../target/idl/sentinel.json', import.meta.url).pathname;
   const idl = JSON.parse(fs.readFileSync(idlPath, 'utf8'));
@@ -114,6 +119,7 @@ async function main() {
     .syncVault(usdcBalanceCents, samplePositions)
     .accounts({
       vault: vaultPda,
+      policy: policyPda,
       owner: ownerKeypair.publicKey,
     })
     .rpc();

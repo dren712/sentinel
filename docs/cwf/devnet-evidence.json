@@ -1,7 +1,9 @@
 {
   "programId": "3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH",
   "cluster": "devnet",
-  "timestamp": "2026-10-07T21:33:20.731Z",
+  "capturedAt": "2026-10-07T21:33:20.731Z",
+  "verifiedAt": "2026-10-12T00:00:00.000Z",
+  "verificationMethod": "Each signature below was resolved via https://api.devnet.solana.com (getTransaction + getSignaturesForAddress). Every one invoked this program and committed successfully (meta.err === null). The postRecoveryState block was re-decoded from the live vault account using this repository's IDL.",
   "pythAccount": "GsZE13nr9acPWUHvpwnajtMzpctFyxfgquNsCnR2P52i",
   "feedId": "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
   "vault": "DdaK1oEsBcCfsgyKoYbkhf8BkS927cRZDskvAvjJscrr",
@@ -35,7 +37,7 @@
     },
     {
       "instruction": "flag_violation_quarantined",
-      "signature": "PDw3zefCFwawCf8K51vb1bCAGg3TQZ7nSah1ZRJg686BSJbYqZ8UV6okuy9cpvSpoPrFxrY5sSaJRHWhChJ6qpE",
+      "signature": "PDw3zefCFwawCf8K51vb1bCAGg3TQZ7nSah1ZRJg686BSJbYqZ8UV6okuy9cpvSpoFrFxrY5sSaJRHWhChJ6qpE",
       "slot": 508591686,
       "signer": "6H5nrFrvoWtAjUE5M8D5XXUU7W6JNzfPkGmytSyA9K2z"
     },
@@ -44,14 +46,38 @@
       "signature": "2zUD46Fqo6NrzVh5E6Er9HZU9bfJZtHcFz62cchtQs1XR8bDM1WhKbRZTygJY4gyhJphRT2X2MUmWnUc4bZiWBob",
       "slot": 508591692,
       "signer": "6H5nrFrvoWtAjUE5M8D5XXUU7W6JNzfPkGmytSyA9K2z"
+    },
+    {
+      "instruction": "owner_release",
+      "signature": "2tQQYGDpnBqttytdnYQ9JoFsVZMAbi2bLvgyKzamYUgE7oYha7PP9Cf59uTiEYxQ73Mxg5rbZtwCELqYzurktEZd",
+      "slot": 508574916,
+      "signer": "HJJo1z2MWcCPAwLF1qL22UiXczJ8UQg46WECDVCuMRVC"
     }
   ],
   "postRecoveryState": {
-    "status": "active",
+    "source": "decoded from live devnet account via this repository's IDL",
+    "status": "Active",
     "recoveryNonce": 2,
     "lastRecoverySlot": 508591692,
     "lastRecoverySolver": "6H5nrFrvoWtAjUE5M8D5XXUU7W6JNzfPkGmytSyA9K2z",
+    "pendingViolationSlot": 0,
+    "quarantineSlot": 0,
+    "recoveryExpiresSlot": 0,
+    "policyVersionAtQuarantine": 0,
     "usdcBalanceCents": 19976576,
-    "remainingUnits": 22
-  }
+    "totalValueCents": 25625120,
+    "positions": [
+      {
+        "symbol": "ETH",
+        "mint": "E2hx5eHZvyd2DmdcVuJrueQLZoTu59QX4ZJ1Ln8xT5eT",
+        "amountUnits": 22,
+        "priceCents": 256752,
+        "isIndex": false
+      }
+    ]
+  },
+  "notes": [
+    "The vault demonstrated here holds a single ETH position against USDC. It is the lifecycle proof for quarantine and containment, not a claim about the agent's default NVDAx scenario.",
+    "'sync_vault' predates the post-submission hardening that added the required PolicyAccount to that instruction. See the Program Version Boundary section in README.md."
+  ]
 }

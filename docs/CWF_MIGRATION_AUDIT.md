@@ -54,7 +54,7 @@ The following capabilities are compiled in the Anchor program (`3TVEhBHwQNoEU1Vw
    - Expiration guard: `current_slot <= recovery_expires_slot` (`RecoveryWindowClosed` 6030).
    - Replay protection: `expected_nonce == vault.recovery_nonce` (`StaleRecoveryNonce` 6031).
    - Strict custody accounts requirement: Requires 4 canonical accounts `[vault_ta, safe_dest_ta, mint, token_program]` (`MissingCustodyAccounts` 6045).
-   - Token program allowlist: Program ID must equal SPL Token (`TokenkegQfe...`) or Token-2022 (`TokenzQdBNb...`) (`InvalidTokenProgram` 6040).
+   - Token program allowlist: Program ID must equal SPL Token (`TokenkegQfe...`) or Token-2022 (`TokenzQdBNb...`) (`InvalidTokenAccountOwner` 6038).
    - Program-signed CPI `transfer_checked_signed` moves exact `sell_units` to `policy.safe_destination`.
    - Volatile asset reduce-only bound: `0 < sell_units <= amount_units` (`InvalidAmount` 6035).
    - Value conservation check: `post_total >= pre_total * (10000 - max_recovery_cost_bps) / 10000` (`ValueConservationBreached` 6032).

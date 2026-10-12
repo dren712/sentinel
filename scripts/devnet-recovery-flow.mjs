@@ -157,6 +157,7 @@ async function main() {
     ])
     .accounts({
       vault: vaultPda,
+      policy: policyPda,
       owner: owner.publicKey,
     })
     .rpc();

@@ -6,11 +6,11 @@ Autonomous AI agents operate in probabilistic space: they ingest signals, reason
 
 Sentinel places an **atomic state-transition boundary** between the autonomous agent (`Robo-01`) and capital execution on Solana:
 
-1. **Deterministic Account Locking**: Every portfolio invariant (`PolicyAccount`), vault balance state (`VaultAccount`), agent mandate (`AgentAccount`), and trade commitment (`PromiseAccount`) lives in deterministic Program Derived Addresses (PDAs) owned by the Sentinel Anchor program (`3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK`).
+1. **Deterministic Account Locking**: Every portfolio invariant (`PolicyAccount`), vault state (`PortfolioVault`), agent mandate (`AgentAccount`), and trade commitment (`PromiseAccount`) lives in deterministic Program Derived Addresses (PDAs) owned by the Sentinel Anchor program (`3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH`). SPL custody lives in separate PDA-owned token accounts passed to the program, not in the vault state account.
 2. **Two-Tier Pre-State vs. Post-State Verification**: Sentinel enforces a strict defense-in-depth model across two layers before any state transition commits:
    - **On-Chain Anchor Guard (`execute_guarded_trade`)**: Enforces single-stock concentration cap (`post_asset_bps <= max_single_asset_bps`), stablecoin reserve floor (`post_stablecoin_bps >= min_stablecoin_bps`), max trade size (`trade_amount_usd <= max_trade_value_usd`), max slippage (`max_slippage_bps`), and agent authorization / promise binding. If any on-chain check fails, the transaction reverts atomically on Solana (`0` tokens moved).
    - **Off-Chain Pre-Trade Verifiers (`Sentinel SDK`)**: Asserts Pyth oracle freshness (`quote_age <= 60s`), confidence intervals, and tracking error; PreStocks pre-IPO universe allocation (`exposure <= 20%`); and Meteora DBC pool depth (`liquidity >= $25k`) and price impact (`<= 200 bps`).
-3. **Structured Error Feedback for Reactive Adaptation**: Anchor error codes (`6000`–`6009`) and SDK postcondition diagnostics return the exact mathematical headroom (`maxCompliantAmountUsd`) so the agent can adapt (`$15,000 → $5,000`) and settle within the same decision cycle.
+3. **Structured Error Feedback for Reactive Adaptation**: Anchor error codes (`6000`–`6046`) and SDK postcondition diagnostics return the exact mathematical headroom so the agent can adapt and settle within the same decision cycle.
 
 ---
 
@@ -29,7 +29,7 @@ To ensure technical accuracy for code reviewers and judges, Sentinel explicitly 
 │   ├─ PreStocksApiClient ➔ Server-side Pre-IPO 409A NAV registry         │
 │   └─ MeteoraDBCMarketQualityVerifier ➔ Deterministic pool PDA & guard   │
 │                                                                         │
-│ Solana Devnet Anchor Program (3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK)
+│ Solana Devnet Anchor Program (3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH)
 │   ├─ PolicyAccount PDA    (initialize_policy / update_policy)           │
 │   ├─ AgentAccount PDA     (initialize_agent)                            │
 │   ├─ VaultAccount PDA     (initialize_vault / sync_vault)               │

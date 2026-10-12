@@ -923,10 +923,33 @@ export type Sentinel = {
           }
         },
         {
+          "name": "policy",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
           "signer": true,
           "relations": [
-            "vault"
+            "vault",
+            "policy"
           ]
         }
       ],

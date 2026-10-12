@@ -12,8 +12,8 @@ sentinel = "3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH"
 [programs.devnet]
 sentinel = "3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH"
 
-[programs.mainnet]
-sentinel = "3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH"
+# No mainnet deployment. Sentinel is devnet-only; do not carry a devnet program
+# ID forward into a mainnet entry.
 
 [registry]
 url = "https://api.apr.dev"

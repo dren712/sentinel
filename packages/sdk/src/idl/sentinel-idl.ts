@@ -917,10 +917,33 @@ export const SENTINEL_IDL = {
           }
         },
         {
+          "name": "policy",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  108,
+                  105,
+                  99,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
           "name": "owner",
           "signer": true,
           "relations": [
-            "vault"
+            "vault",
+            "policy"
           ]
         }
       ],
@@ -1730,6 +1753,16 @@ export const SENTINEL_IDL = {
       "code": 6044,
       "name": "TokenBalanceMismatch",
       "msg": "Actual token balance does not match expected amount"
+    },
+    {
+      "code": 6045,
+      "name": "MissingCustodyAccounts",
+      "msg": "Recovery requires the four canonical SPL custody accounts"
+    },
+    {
+      "code": 6046,
+      "name": "UntrackedDepositMint",
+      "msg": "Deposited mint is not tracked by this vault"
     }
   ],
   "types": [

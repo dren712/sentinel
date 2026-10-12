@@ -1,6 +1,6 @@
 # Deploying Sentinel Finance on Railway
 
-Sentinel Finance is containerized with a production multi-stage [`Dockerfile`](file:///Users/darshangaikwad/Desktop/stocklana/Dockerfile) that produces an ultra-lightweight standalone Next.js server (~150MB image size) with sub-100ms cold starts.
+Sentinel Finance is containerized with a production multi-stage [`Dockerfile`](../Dockerfile) that produces an ultra-lightweight standalone Next.js server (~150MB image size) with sub-100ms cold starts.
 
 ---
 
@@ -8,7 +8,7 @@ Sentinel Finance is containerized with a production multi-stage [`Dockerfile`](f
 
 1. Go to [railway.app](https://railway.app/) and create a new project.
 2. Select **Deploy from GitHub repo** and choose `sentinel_finance` (or your fork).
-3. Railway automatically detects [`railway.json`](file:///Users/darshangaikwad/Desktop/stocklana/railway.json) and uses [`Dockerfile`](file:///Users/darshangaikwad/Desktop/stocklana/Dockerfile).
+3. Railway automatically detects [`railway.json`](../railway.json) and uses [`Dockerfile`](../Dockerfile).
 4. Click **Deploy**.
 
 ---
@@ -55,7 +55,7 @@ Railway automatically queries the built-in health check:
 GET /api/health
 ```
 
-Returns HTTP 200 with complete diagnostics:
+Returns HTTP 200 with component-level diagnostics. Abridged sample (the real payload additionally carries `deploymentTarget`, `service`, `version`, `authority`, `agent`, `historyStore`, `timestamp`, and `cluster.{serverRpcConfigured,policyPda,agentPda,vaultPda}` — see `apps/web/src/app/api/health/route.ts`):
 ```json
 {
   "status": "ok",
@@ -69,3 +69,5 @@ Returns HTTP 200 with complete diagnostics:
   }
 }
 ```
+
+`status` is `"degraded"` (still HTTP 200) when `DATABASE_URL` is explicitly configured but Postgres is unreachable; `"error"` with HTTP 500 is reserved for an unexpected handler failure.

@@ -36,6 +36,10 @@ function buildMintBuffer(decimals: number, supply: bigint | number = 1_000_000_0
 /**
  * Builds a serialized PriceUpdateV2 account binary buffer matching Pyth Solana Receiver V2
  */
+// Tracks the bankrun clock so synthetic Pyth fixtures carry a realistic
+// `posted_slot` (see `syncPricePostedSlots` and `check_pyth_slot_lag`).
+let CURRENT_SLOT = 0n;
+
 function buildPriceUpdateV2Buffer(options: {
   writeAuthority?: PublicKey;
   verificationLevel?: 'Full' | 'Partial';
@@ -78,7 +82,7 @@ function buildPriceUpdateV2Buffer(options: {
   emaConfBuf.writeBigUInt64LE(options.conf !== undefined ? BigInt(options.conf) : 50_000_000n);
 
   const slotBuf = Buffer.alloc(8);
-  slotBuf.writeBigUInt64LE(options.postedSlot || 100n);
+  slotBuf.writeBigUInt64LE(options.postedSlot || CURRENT_SLOT);
 
   return Buffer.concat([
     disc,
@@ -149,13 +153,38 @@ describe('Phase 2: Bankrun Recovery Test Suite (Slot-Warped)', () => {
 
   async function advanceSlot(delta: bigint = 10n) {
     const clock = await ctx.banksClient.getClock();
+    const next = clock.slot + delta;
     ctx.setClock(new (clock.constructor as any)(
-      clock.slot + delta,
+      next,
       clock.epochStartTimestamp,
       clock.epoch,
       clock.leaderScheduleEpoch,
       clock.unixTimestamp
     ));
+    syncPricePostedSlots(next);
+    CURRENT_SLOT = next;
+  }
+
+  // Pyth Receiver price-update accounts are ephemeral: the program binds each
+  // consumed price to the slot it was posted in (`posted_slot`, see
+  // `check_pyth_slot_lag`), so a replayed older print is rejected with
+  // `StaleOracle`. Real Pyth updates land within a slot or two of publication, so
+  // the fixtures must track the bankrun clock rather than hardcoding a fixed slot.
+  const priceAccounts = new Map<string, { pubkey: PublicKey; lamports: number; base: Buffer }>();
+
+  function syncPricePostedSlots(slot: bigint) {
+    const slotBuf = Buffer.alloc(8);
+    slotBuf.writeBigUInt64LE(slot);
+    for (const { pubkey, lamports, base } of priceAccounts.values()) {
+      const data = Buffer.from(base);
+      slotBuf.copy(data, data.length - 8); // posted_slot is the trailing u64
+      ctx.setAccount(pubkey, {
+        lamports,
+        data,
+        owner: PYTH_RECEIVER_ID,
+        executable: false,
+      });
+    }
   }
 
   async function processTx(tx: Transaction, signer: Keypair): Promise<string[]> {
@@ -239,6 +268,7 @@ describe('Phase 2: Bankrun Recovery Test Suite (Slot-Warped)', () => {
       ])
       .accountsPartial({
         vault: vaultPda,
+        policy: policyPda,
         owner: owner.publicKey,
       })
       .instruction();
@@ -487,6 +517,24 @@ describe('Phase 2: Bankrun Recovery Test Suite (Slot-Warped)', () => {
     ];
 
     ctx = await startAnchor('.', [], initialAccounts);
+
+    // Register every Pyth-owned fixture so its `posted_slot` can track the clock,
+    // then wrap `warpToSlot` so time-warped tests keep oracle fixtures honest.
+    for (const acc of initialAccounts) {
+      if (acc.info.owner.equals(PYTH_RECEIVER_ID)) {
+        priceAccounts.set(acc.address.toBase58(), {
+          pubkey: acc.address,
+          lamports: acc.info.lamports,
+          base: Buffer.from(acc.info.data),
+        });
+      }
+    }
+    const originalWarpToSlot = ctx.warpToSlot.bind(ctx);
+    (ctx as any).warpToSlot = (slot: bigint) => {
+      originalWarpToSlot(slot);
+      CURRENT_SLOT = slot;
+      syncPricePostedSlots(slot);
+    };
 
     const dummyWallet = {
       publicKey: owner.publicKey,
@@ -1381,6 +1429,7 @@ describe('Phase 2: Bankrun Recovery Test Suite (Slot-Warped)', () => {
       .syncVault(new BN(800000), multiVolatilePositions)
       .accountsPartial({
         vault: vaultPda,
+        policy: policyPda,
         owner: owner.publicKey,
       })
       .instruction();

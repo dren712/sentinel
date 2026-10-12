@@ -53,7 +53,7 @@ NEXT_PUBLIC_SASSET_MINT=BJWNG3k1nmgG3Ua42P1CqRZWkSu9hYoRGeAttLmLZ1GT
 Run the Next.js production or development server:
 
 ```bash
-pnpm --filter web dev
+pnpm dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser:
 - **Dashboard (`/`)**: Portfolio overview and live invariant monitoring.
@@ -153,7 +153,7 @@ main().catch(console.error);
 Run the complete test suite:
 
 ```bash
-# 1. Run all 110 SDK, domain, watcher/solver, and adversarial security tests
+# 1. Run all 110 SDK + 39 Domain watcher/solver/adversarial security tests
 pnpm test
 
 # 2. Run Bankrun recovery slot-warping tests (26 test cases)
@@ -162,10 +162,16 @@ node --experimental-strip-types --test tests/bankrun-recovery.test.ts
 # 3. Run Bankrun quarantine hysteresis tests (13 test cases)
 node --experimental-strip-types --test tests/bankrun-quarantine.test.ts
 
-# 4. Run Rust Anchor program unit tests (28 test cases)
+# 4. Run Bankrun remediation security tests (26 test cases)
+node --experimental-strip-types --test tests/remediation-security.test.ts
+
+# 5. Run Anchor localnet integration tests (20 test cases)
+node --test tests/sentinel-localnet.test.ts
+
+# 6. Run Rust Anchor program unit tests (30 test cases)
 cargo test --manifest-path programs/sentinel/Cargo.toml
 
-# 5. Build Next.js production bundle
-pnpm --filter web build
+# 7. Build Next.js production bundle
+pnpm --filter @sentinel/web build
 ```
-Total: **197 / 197 automated tests passing with zero failures.**
+Total: **264 / 264 automated tests passing with zero failures** — 110 SDK, 39 Domain, 26 Bankrun recovery, 13 Bankrun quarantine, 26 remediation security, 20 localnet, 30 Rust.

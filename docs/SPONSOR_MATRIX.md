@@ -8,8 +8,8 @@ Sentinel Finance adheres to a focused, high-conviction submission strategy. Rath
 | :--- | :--- | :--- | :--- |
 | **Main Track ($100k)** | **Robo-Portfolios** | Autonomous robo-investor for tokenized equities with authoritative on-chain postcondition guarantees. | `programs/sentinel`, `apps/web`, `packages/sdk` |
 | **Pyth Network** | **Market Truth & Valuation** | Dual-feed oracle mark-to-market pricing, staleness verification, confidence intervals ($\pm \sigma$), and tracking error checks. | `packages/domain/src/price-provider.ts`, `packages/domain/src/asset-registry.ts` |
-| **PreStocks ($10k)** | **Pre-IPO Asset Universe** | Pre-IPO private equity universe (`SPACEXx`, `OPENAIx`, `STRIPEx`), Portfolio Builder, and macro asset class allocation limits (`Pre-IPO ≤ 20%`). | `packages/domain/src/asset-registry.ts`, `packages/sdk/src/adapters/pre-stocks-adapter.ts` |
-| **Meteora ($5k)** | **Stock Liquidity Primitive** | Dynamic Bonding Curve (DBC) liquidity verifier ($25k reserve floor, $\le 200\text{ bps}$ price divergence), dynamic fees, and bidirectional market protection. | `packages/domain/src/swarm-verifiers.ts`, `packages/sdk/src/verifiers/meteora-verifier.ts` |
+| **PreStocks ($10k)** | **Pre-IPO Asset Universe** | Pre-IPO private equity universe (`SPACEXx`, `OPENAIx`, `STRIPEx`), Portfolio Builder, and macro asset class allocation limits (`Pre-IPO ≤ 20%`). | `packages/domain/src/asset-registry.ts`, `packages/domain/src/prestocks.ts`, `packages/sdk/src/adapters/prestocks-adapter.ts` |
+| **Meteora ($5k)** | **Stock Liquidity Primitive** | Dynamic Bonding Curve (DBC) liquidity verifier ($25k reserve floor, $\le 200\text{ bps}$ price divergence), dynamic fees, and bidirectional market protection. | `packages/domain/src/swarm-verifiers.ts`, `packages/domain/src/meteora-market.ts`, `packages/sdk/src/sponsors/meteora.ts`, `packages/sdk/src/adapters/meteora-adapter.ts` |
 
 ---
 
@@ -33,7 +33,8 @@ Sentinel Finance adheres to a focused, high-conviction submission strategy. Rath
   - Autonomous agents automatically calculate maximum compliant pre-IPO trade sizing under the 20% ceiling.
 - **Code Path**:
   - [`packages/domain/src/asset-registry.ts`](../packages/domain/src/asset-registry.ts)
-  - [`packages/sdk/src/adapters/pre-stocks-adapter.ts`](../packages/sdk/src/adapters/pre-stocks-adapter.ts)
+  - [`packages/domain/src/prestocks.ts`](../packages/domain/src/prestocks.ts)
+  - [`packages/sdk/src/adapters/prestocks-adapter.ts`](../packages/sdk/src/adapters/prestocks-adapter.ts)
 
 ### 2.3 Meteora — Dynamic Bonding Curve (DBC) & Market Protection
 - **Strategic Fit**: Tokenized equities launched on Meteora DBCs require deep liquidity and controlled volatility to be investable by autonomous agents.
@@ -41,8 +42,10 @@ Sentinel Finance adheres to a focused, high-conviction submission strategy. Rath
   - `MeteoraDBCMarketQualityVerifier` inspects DBC pool reserves to verify a minimum liquidity floor of **$25,000 USD** and spot price divergence $\le 2.00\%$.
   - Bidirectional Protection: Sentinel protects investors from rogue agent trades *and* protects Meteora DBC pools from toxic predatory flows by enforcing trade sizing ceilings and slippage bounds.
 - **Code Path**:
-  - [`packages/domain/src/swarm-verifiers.ts`](../packages/domain/src/swarm-verifiers.ts)
-  - [`packages/sdk/src/verifiers/meteora-verifier.ts`](../packages/sdk/src/verifiers/meteora-verifier.ts)
+  - [`packages/domain/src/swarm-verifiers.ts`](../packages/domain/src/swarm-verifiers.ts) (`LiquidityVerifier`, emits `ERR_LIQUIDITY_DEPTH_INSUFFICIENT`)
+  - [`packages/domain/src/meteora-market.ts`](../packages/domain/src/meteora-market.ts) (`MeteoraStockMarket`, bidirectional protection)
+  - [`packages/sdk/src/sponsors/meteora.ts`](../packages/sdk/src/sponsors/meteora.ts) (`MeteoraDBCMarketQualityVerifier`)
+  - [`packages/sdk/src/adapters/meteora-adapter.ts`](../packages/sdk/src/adapters/meteora-adapter.ts) (`MeteoraExecutionAdapter`)
 
 ---
 

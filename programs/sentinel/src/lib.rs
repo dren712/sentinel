@@ -55,6 +55,34 @@ pub mod sentinel {
         require!(min_stablecoin_bps <= 10_000, SentinelError::InvalidPolicyBounds);
         require!(max_slippage_bps <= 10_000, SentinelError::InvalidPolicyBounds);
 
+        // Cross-field coherence. Without these, a syntactically valid policy can
+        // silently disable the entire invariant engine or make it unsatisfiable:
+        //
+        //   * `max_single == 10000` with `min_stable == 0` means
+        //     `check_exposure_and_reserve` can never fail, so `flag_violation` can
+        //     only ever return `NoViolation` and quarantine becomes unreachable.
+        //   * `max_single + min_stable > 10000` means no portfolio can satisfy
+        //     both bounds simultaneously, permanently bricking trading.
+        require!(
+            max_single_asset_bps < 10_000,
+            SentinelError::InvalidPolicyBounds
+        );
+        require!(
+            max_single_asset_bps
+                .checked_add(min_stablecoin_bps)
+                .ok_or(SentinelError::InvalidPolicyBounds)?
+                <= 10_000,
+            SentinelError::InvalidPolicyBounds
+        );
+        // The oversell guard keeps a recovering vault within
+        // `max_single - OVERSELL_BAND_BPS` of its cap. A cap at or below the band
+        // saturates that subtraction to zero and vacates the guard, letting a
+        // permissionless `recover()` move 100% of custody to `safe_destination`.
+        require!(
+            max_single_asset_bps > OVERSELL_BAND_BPS,
+            SentinelError::InvalidPolicyBounds
+        );
+
         let policy = &mut ctx.accounts.policy;
         policy.owner = ctx.accounts.owner.key();
         policy.max_single_asset_bps = max_single_asset_bps;
@@ -179,6 +207,25 @@ pub mod sentinel {
 
         let vault = &mut ctx.accounts.vault;
         require!(vault.status == VaultStatus::Active, SentinelError::VaultNotActive);
+
+        // Enforce the same invariant postcondition as `execute_guarded_trade`.
+        // Without this, an owner-asserted sync could write `usdc_balance_cents = 0`
+        // and leave the vault 100% concentrated in one asset — a total bypass of
+        // the concentration cap and stablecoin floor. It also desynchronized the
+        // ledger from real SPL custody, and because every custody path asserts
+        // exact balance equality, that desync was permanent and unrecoverable.
+        let policy = &ctx.accounts.policy;
+        let target_cents = positions[0]
+            .amount_units
+            .checked_mul(positions[0].price_cents)
+            .ok_or(SentinelError::MathOverflow)?;
+        let total_cents = usdc_balance_cents
+            .checked_add(target_cents)
+            .ok_or(SentinelError::MathOverflow)?;
+        if total_cents > 0 && positions[0].amount_units > 0 {
+            check_exposure_and_reserve(policy, target_cents, total_cents, usdc_balance_cents)?;
+        }
+
         vault.usdc_balance_cents = usdc_balance_cents;
         vault.positions = positions;
 
@@ -308,6 +355,7 @@ pub mod sentinel {
         let pyth_price_cents = parse_and_verify_pyth_price(
             &ctx.accounts.price_update,
             clock.unix_timestamp,
+            clock.slot,
             200, // 200 bps = 2.0% max confidence interval
             expected_feed_id,
         )?;
@@ -509,6 +557,7 @@ pub mod sentinel {
         let pyth_price_cents = parse_and_verify_pyth_price(
             &ctx.accounts.price_update,
             clock.unix_timestamp,
+            clock.slot,
             200, // 200 bps = 2.0% max confidence
             pos.feed_id,
         )?;
@@ -684,6 +733,7 @@ pub mod sentinel {
         let price_cents = parse_and_verify_pyth_price(
             &ctx.accounts.price_update,
             clock.unix_timestamp,
+            clock.slot,
             200, // 200 bps = 2.0% max confidence
             feed_id,
         )?;
@@ -811,7 +861,21 @@ pub mod sentinel {
 
         // Strict improvement & oversell guard
         check_strict_improvement(pre_exposure_bps, post_exposure_bps)?;
-        check_oversell_guard(post_exposure_bps, policy.max_single_asset_bps, OVERSELL_BAND_BPS)?;
+        // The oversell guard stops a solver from dumping the entire position to
+        // satisfy a recovery that only needed a small trim. It is only meaningful
+        // while the vault is actually breaching its cap.
+        //
+        // `pre_exposure_bps` is recomputed from the live price at recovery time,
+        // so a vault quarantined at 3000bps whose asset rallied back to 1800bps
+        // is already compliant. In that state `pre < max_single - band`, which
+        // makes "post < pre" and "post >= max_single - band" mutually
+        // unsatisfiable — no `sell_units` could ever pass and the vault would be
+        // stranded in Quarantined until the owner intervened. Gating the guard
+        // on an actual breach preserves it where it does work while restoring
+        // liveness where the market has already repaired the position.
+        if pre_exposure_bps > policy.max_single_asset_bps {
+            check_oversell_guard(post_exposure_bps, policy.max_single_asset_bps, OVERSELL_BAND_BPS)?;
+        }
 
         // Atomically restore Active state
         let new_nonce = vault.recovery_nonce
@@ -1060,9 +1124,39 @@ pub fn check_pyth_freshness(publish_time: i64, current_timestamp: i64) -> Result
         .ok_or(SentinelError::MathOverflow)?;
     require!(publish_time <= max_future_time, SentinelError::InvalidPrice);
     require!(
-        current_timestamp.saturating_sub(publish_time) <= 60,
+        current_timestamp.saturating_sub(publish_time) <= MAX_ORACLE_PUBLISH_AGE_SECS,
         SentinelError::StaleOracle
     );
+    Ok(())
+}
+
+/// Maximum age, in seconds, of a Pyth `publish_time` relative to cluster time.
+pub const MAX_ORACLE_PUBLISH_AGE_SECS: i64 = 60;
+
+/// Maximum number of slots a Pyth price-update account may lag behind the slot
+/// that consumes it.
+///
+/// Pyth Receiver price-update accounts are *ephemeral*: anybody can create one
+/// from any genuine publisher-signed print and close it again. Freshness on
+/// `publish_time` alone therefore cannot prove that a caller passed the
+/// canonical, currently-live update — an attacker could hand the program a
+/// perfectly `Full`-verified but materially older print from inside the
+/// publish-time window and have the vault judged against it.
+///
+/// Requiring the update to have landed on-chain within `MAX_ORACLE_SLOT_LAG`
+/// slots binds the price to the live oracle shard: only an update posted in
+/// the recent past can be consumed. Devnet/mainnet slots are ~400ms, so 64
+/// slots is roughly 25 seconds — comfortably wider than normal Pyth publish
+/// latency (1-2 slots) while closing the stale-print replay window.
+pub const MAX_ORACLE_SLOT_LAG: u64 = 64;
+
+/// Binds a verified Pyth price update to the slot that consumes it.
+///
+/// Reverts with [`SentinelError::StaleOracle`] when the update was posted more
+/// than [`MAX_ORACLE_SLOT_LAG`] slots ago.
+pub fn check_pyth_slot_lag(posted_slot: u64, current_slot: u64) -> Result<()> {
+    let min_acceptable_slot = current_slot.saturating_sub(MAX_ORACLE_SLOT_LAG);
+    require!(posted_slot >= min_acceptable_slot, SentinelError::StaleOracle);
     Ok(())
 }
 
@@ -1108,6 +1202,7 @@ pub fn convert_pyth_price_to_cents(price: i64, expo: i32) -> Result<u64> {
 pub fn parse_and_verify_pyth_price(
     account_info: &AccountInfo,
     current_timestamp: i64,
+    current_slot: u64,
     max_conf_bps: u16,
     expected_feed_id: [u8; 32],
 ) -> Result<u64> {
@@ -1131,6 +1226,9 @@ pub fn parse_and_verify_pyth_price(
         SentinelError::FeedMismatch
     );
 
+    // Bind the update to the consuming slot. Must run BEFORE the price is used so a
+    // caller cannot select which verified print the vault is evaluated against.
+    check_pyth_slot_lag(price_update.posted_slot, current_slot)?;
     check_pyth_freshness(msg.publish_time, current_timestamp)?;
     check_pyth_confidence(msg.price, msg.conf, max_conf_bps)?;
 
@@ -1350,6 +1448,16 @@ pub struct SyncVault<'info> {
         has_one = owner
     )]
     pub vault: Account<'info, PortfolioVault>,
+    /// The owner's risk policy. `sync_vault` asserts the same concentration and
+    /// reserve postconditions as `execute_guarded_trade`, so it must read the same
+    /// policy the vault is bound to. Without this the ledger-sync path was a total
+    /// bypass of the invariant engine.
+    #[account(
+        seeds = [b"policy", owner.key().as_ref()],
+        bump = policy.bump,
+        has_one = owner
+    )]
+    pub policy: Account<'info, PolicyAccount>,
     pub owner: Signer<'info>,
 }
 
@@ -2024,6 +2132,46 @@ mod tests {
         // Benchmark price of existing holdings MUST remain intact (12,000 cents), preventing valuation collapse
         assert_eq!(target_pos.price_cents, 12_000);
         assert_eq!(target_pos.amount_units, 241);
+    }
+
+    #[test]
+    fn test_pyth_slot_lag_rejects_replayed_ephemeral_update() {
+        let current_slot = 500_000u64;
+
+        // Canonical update posted in the last slot passes.
+        assert!(check_pyth_slot_lag(current_slot, current_slot).is_ok());
+        assert!(check_pyth_slot_lag(current_slot - 1, current_slot).is_ok());
+
+        // Boundary: exactly MAX_ORACLE_SLOT_LAG behind still passes.
+        assert!(check_pyth_slot_lag(current_slot - MAX_ORACLE_SLOT_LAG, current_slot).is_ok());
+
+        // One slot past the boundary fails closed with StaleOracle.
+        assert_eq!(
+            check_pyth_slot_lag(current_slot - MAX_ORACLE_SLOT_LAG - 1, current_slot).unwrap_err(),
+            error!(SentinelError::StaleOracle)
+        );
+
+        // THE ATTACK: an attacker replays a genuine, Full-verified, publisher-signed
+        // print that landed 30s ago. On Solana that is ~75 slots of lag. Publishing
+        // freshness alone would accept it; the slot binding rejects it.
+        assert_eq!(
+            check_pyth_slot_lag(current_slot - 75, current_slot).unwrap_err(),
+            error!(SentinelError::StaleOracle)
+        );
+
+        // A print from long ago is likewise rejected.
+        assert_eq!(
+            check_pyth_slot_lag(0, current_slot).unwrap_err(),
+            error!(SentinelError::StaleOracle)
+        );
+    }
+
+    #[test]
+    fn test_pyth_slot_lag_does_not_underflow_at_genesis() {
+        // Early-chain slots must not wrap the saturating subtraction into a
+        // bogus rejection of a freshly posted update.
+        assert!(check_pyth_slot_lag(0, 0).is_ok());
+        assert!(check_pyth_slot_lag(5, 10).is_ok());
     }
 
     #[test]

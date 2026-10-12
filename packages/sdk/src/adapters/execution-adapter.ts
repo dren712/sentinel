@@ -588,6 +588,12 @@ export class LiveExecutionAdapter implements ExecutionAdapter {
       [Buffer.from('vault'), targetOwner.toBuffer()],
       this.programId
     );
+    // `sync_vault` re-checks the concentration cap and stablecoin floor against the
+    // owner's policy, so the same policy PDA the vault is bound to must be supplied.
+    const [policyPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('policy'), targetOwner.toBuffer()],
+      this.programId
+    );
 
     const formattedPositions = positions.map((p) => ({
       mint: p.mint instanceof PublicKey ? p.mint : new PublicKey(p.mint),
@@ -607,6 +613,7 @@ export class LiveExecutionAdapter implements ExecutionAdapter {
       )
       .accountsPartial({
         vault: vaultPda,
+        policy: policyPda,
         owner: ownerPubkey,
       })
       .instruction();

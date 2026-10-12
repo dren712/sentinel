@@ -118,6 +118,10 @@ describe('P24 — Split Keys Security & Access Control Suite', () => {
       [Buffer.from('vault'), realOwnerPubkey.toBuffer()],
       adapter.programId
     );
+    const [ownerPolicyPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('policy'), realOwnerPubkey.toBuffer()],
+      adapter.programId
+    );
 
     const dummyProvider = new AnchorProvider(
       adapter.getConnection(),
@@ -143,6 +147,7 @@ describe('P24 — Split Keys Security & Access Control Suite', () => {
       .syncVault(new BN(2500000), [])
       .accountsPartial({
         vault: ownerVaultPda,
+        policy: ownerPolicyPda,
         owner: agentKp.publicKey,
       })
       .instruction();
@@ -158,7 +163,8 @@ describe('P24 — Split Keys Security & Access Control Suite', () => {
     } catch {
       // Offline/sandboxed environment: verify instruction structure
       assert.strictEqual(syncIx.programId.toBase58(), adapter.programId.toBase58());
-      assert.strictEqual(syncIx.keys.length, 2);
+      // vault + policy + owner
+      assert.strictEqual(syncIx.keys.length, 3);
       return;
     }
 
@@ -169,12 +175,18 @@ describe('P24 — Split Keys Security & Access Control Suite', () => {
     const logs = simulationResult.value.logs || [];
     const logStr = logs.join('\n');
 
-    // On-chain Anchor program must reject with ConstraintSeeds (2006 / 0x7d6) or ConstraintHasOne (2001 / 0x7d1)
+    // On-chain Anchor program must reject the agent-signed call. The exact Anchor
+    // code depends on the deployed program build:
+    //   ConstraintSeeds (2006) / ConstraintHasOne (2001) — vault/policy binding,
+    //   AccountNotSigner (3010)                   — the agent key is not the owner signer.
+    // Any of these proves the split-key boundary: an agent authority can never
+    // drive the owner-only ledger-sync path.
     const isConstraintSeeds = logStr.includes('ConstraintSeeds') || logStr.includes('0x7d6') || logStr.includes('2006');
     const isConstraintHasOne = logStr.includes('ConstraintHasOne') || logStr.includes('0x7d1') || logStr.includes('2001');
+    const isAccountNotSigner = logStr.includes('AccountNotSigner') || logStr.includes('0xbc2') || logStr.includes('3010');
 
     assert.ok(
-      isConstraintSeeds || isConstraintHasOne,
+      isConstraintSeeds || isConstraintHasOne || isAccountNotSigner,
       `Expected Anchor constraint violation when agent calls sync_vault. Logs:\n${logStr}`
     );
   });
