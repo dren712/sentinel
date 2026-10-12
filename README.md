@@ -2,7 +2,7 @@
   <img src="./docs/assets/Sentinel_logo.png" alt="Sentinel Robo" width="300" />
 </p>
 
-<h1 align="center">Sentinel Finance — On-Chain Risk Controls & Emergency Containment</h1>
+<h1 align="center">Sentinel — On-Chain Risk Controls & Emergency Containment</h1>
 
 <p align="center">
   <strong>On-chain risk controls and emergency containment for autonomous financial strategies on Solana.</strong><br>
