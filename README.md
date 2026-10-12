@@ -173,7 +173,7 @@ Agent Intelligence ➔ Sentinel Policy Postconditions ➔ SVM Execution ➔ Sola
 
 | Artifact | On-Chain Address / Signature | Explorer |
 | :--- | :--- | :--- |
-| **Sentinel CWF Program (Authoritative)** | `3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH` | [CWF Program](https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH?cluster=devnet) |
+| **Sentinel CWF Program (Authoritative)** | `3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH` — deployed build is byte-identical to this source tree (SHA-256 `49769774311dd89a…`) | [CWF Program](https://explorer.solana.com/address/3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH?cluster=devnet) |
 | **Pre-CWF Baseline Program (superseded)** | `3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK` — retired; it implements the earlier promise-based portfolio model and has **no** `flag_violation`, `recover`, or SPL custody | [Baseline Program](https://explorer.solana.com/address/3gh1Cc2Qc65hJhxZKneXphWJa27z5adyFayc9kWEvAJK?cluster=devnet) |
 | **Live Railway Deployment** | `sentinel-finance-production-4560.up.railway.app` | [Live Production App](https://sentinel-finance-production-4560.up.railway.app/) |
 | **PolicyAccount PDA** (full lifecycle demo) | `7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm` | [Policy PDA](https://explorer.solana.com/address/7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm?cluster=devnet) |
@@ -186,7 +186,7 @@ Agent Intelligence ➔ Sentinel Policy Postconditions ➔ SVM Execution ➔ Sola
 | **`recover` (SPL containment) TX** | `2zUD46Fqo6NrzVh5E6Er9HZU9bfJZtHcFz62cchtQs1XR8bDM1WhKbRZTygJY4gyhJphRT2X2MUmWnUc4bZiWBob` | [View TX](https://explorer.solana.com/tx/2zUD46Fqo6NrzVh5E6Er9HZU9bfJZtHcFz62cchtQs1XR8bDM1WhKbRZTygJY4gyhJphRT2X2MUmWnUc4bZiWBob?cluster=devnet) |
 | **`owner_release` TX** | `2tQQYGDpnBqttytdnYQ9JoFsVZMAbi2bLvgyKzamYUgE7oYha7PP9Cf59uTiEYxQ73Mxg5rbZtwCELqYzurktEZd` | [View TX](https://explorer.solana.com/tx/2tQQYGDpnBqttytdnYQ9JoFsVZMAbi2bLvgyKzamYUgE7oYha7PP9Cf59uTiEYxQ73Mxg5rbZtwCELqYzurktEZd?cluster=devnet) |
 
-> Every signature above was verified against `https://api.devnet.solana.com`: each invoked `3TVEhBHw...AgH` and committed successfully. The deployed program build predates the post-submission hardening described in [Program Version Boundary](#program-version-boundary).
+> Every signature above was verified against `https://api.devnet.solana.com`: each invoked `3TVEhBHw...AgH` and committed successfully. The lifecycle transactions predate the current deployed build (see [Program Version Boundary](#program-version-boundary)); the state machine they exercise is unchanged.
 
 ---
 
@@ -254,15 +254,28 @@ cargo test --manifest-path programs/sentinel/Cargo.toml
 
 ## Program Version Boundary
 
-Stating this plainly so nobody has to guess:
+**The deployed Devnet program and this source tree are the same binary.** Anyone can confirm it in one command:
 
-- **Everything linked above was executed against the deployed devnet program `3TVEhBHw...AgH`.**
-- **The source in `programs/sentinel/` has since been hardened further.** The deployed build predates three post-submission changes:
-  1. **Oracle slot binding** — `parse_and_verify_pyth_price` now also requires `posted_slot` within `MAX_ORACLE_SLOT_LAG` (64 slots). Pyth price-update accounts are ephemeral, so publish-age alone let a caller choose *which* verified print the vault was judged against. Covered by `test_pyth_slot_lag_rejects_replayed_ephemeral_update`.
-  2. **Recovery liveness** — the oversell guard now applies only while the vault is genuinely breaching its cap. Previously, if the asset rallied between quarantine and recovery, `post < pre` and `post >= max_single − 500bps` became mutually unsatisfiable and **no** `sell_units` could recover the vault.
-  3. **Invariant coverage on `sync_vault`** — the ledger-sync path now re-checks concentration and reserve against the owner's `PolicyAccount` (a new required account on that instruction) instead of writing arbitrary positions unchecked.
+```bash
+solana program dump 3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH deployed.so --url devnet
+shasum -a 256 deployed.so target/deploy/sentinel.so   # identical
+```
 
-All 264 tests pass against the current source. **The deployed binary has not been upgraded with these three changes** — the devnet signatures above demonstrate the quarantine and containment state machine, which is unchanged.
+| | |
+| :--- | :--- |
+| Program | `3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH` |
+| Deploy TX | [`5SDRSNRd…`](https://explorer.solana.com/tx/5SDRSNRdynxPSHEyyT5jy6ivMSkpAQmjihMcFXRMgF6kuDtFxU9NpDTZk6PLgE18Wo8oW3D4DkwErKdBoh79tQxU?cluster=devnet) |
+| Size | 544,000 bytes |
+| SHA-256 | `49769774311dd89acc1b07d173ad35337ec9ac444c5bb7e35dbd74b8d2e0b127` |
+| Upgrade authority | `GR9CtiUswZtay68U2fGqcDeB1dg8sHtpVi9kk2nCEwzw` |
+
+The three hardening changes described above — oracle slot binding, recovery liveness, and `sync_vault` invariant coverage — are therefore **live on-chain**, not just in source:
+
+1. **Oracle slot binding** — `parse_and_verify_pyth_price` requires `posted_slot` within `MAX_ORACLE_SLOT_LAG` (64 slots), so a caller can no longer replay an older `Full`-verified print to pick the price the vault is judged against. Covered by `test_pyth_slot_lag_rejects_replayed_ephemeral_update`.
+2. **Recovery liveness** — the oversell guard now applies only while the vault genuinely breaches its cap. Previously, if the asset rallied between quarantine and recovery, `post < pre` and `post >= max_single − 500bps` were mutually unsatisfiable and **no** `sell_units` could recover the vault.
+3. **Invariant coverage on `sync_vault`** — the ledger-sync path re-checks concentration and reserve against the owner's `PolicyAccount` (a new required account on that instruction) instead of writing arbitrary positions unchecked.
+
+**One honest caveat on the lifecycle evidence above.** The five transactions demonstrating the quarantine → containment lifecycle were executed *before* this upgrade, against the previous build of the same program ID. The **state machine those transactions exercise is unchanged** — `flag_violation`, `recover`, hysteresis, nonce replay protection and the SPL custody path are byte-identical in behaviour. But those specific transactions were not re-run against the hardened build, so treat them as proof of the state machine, not of the three post-upgrade changes.
 
 ---
 

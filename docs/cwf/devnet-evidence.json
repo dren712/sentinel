@@ -8,6 +8,20 @@
   "feedId": "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
   "vault": "DdaK1oEsBcCfsgyKoYbkhf8BkS927cRZDskvAvjJscrr",
   "policy": "7jzGugBwgFxFSMNoBbEPvCS4QAkVeFjAEuiqGojwGCGm",
+  "deployedBuild": {
+    "instruction": "program_upgrade",
+    "signature": "5SDRSNRdynxPSHEyyT5jy6ivMSkpAQmjihMcFXRMgF6kuDtFxU9NpDTZk6PLgE18Wo8oW3D4DkwErKdBoh79tQxU",
+    "upgradeAuthority": "GR9CtiUswZtay68U2fGqcDeB1dg8sHtpVi9kk2nCEwzw",
+    "binaryBytes": 544000,
+    "sha256": "49769774311dd89acc1b07d173ad35337ec9ac444c5bb7e35dbd74b8d2e0b127",
+    "verification": "solana program dump 3TVEhBHw...AgH produces a binary whose sha256 matches this repository's target/deploy/sentinel.so byte-for-byte.",
+    "hardeningShipped": [
+      "check_pyth_slot_lag: binds each consumed Pyth price update to its posting slot (<=64 slots), closing stale-print replay",
+      "recover() oversell guard gated on an actual breach, fixing an unsolvable recovery state",
+      "sync_vault re-checks concentration and reserve against PolicyAccount (new required account)"
+    ],
+    "note": "The lifecycle transactions below predate this upgrade. The quarantine/containment state machine is unchanged between builds, so they remain valid proof of the state machine, but not of the three hardening changes above."
+  },
   "owner": "HJJo1z2MWcCPAwLF1qL22UiXczJ8UQg46WECDVCuMRVC",
   "solver": "6H5nrFrvoWtAjUE5M8D5XXUU7W6JNzfPkGmytSyA9K2z",
   "transactions": [

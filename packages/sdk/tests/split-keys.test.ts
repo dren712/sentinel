@@ -176,17 +176,21 @@ describe('P24 — Split Keys Security & Access Control Suite', () => {
     const logStr = logs.join('\n');
 
     // On-chain Anchor program must reject the agent-signed call. The exact Anchor
-    // code depends on the deployed program build:
+    // code depends on the deployed program build and on which accounts resolve:
     //   ConstraintSeeds (2006) / ConstraintHasOne (2001) — vault/policy binding,
-    //   AccountNotSigner (3010)                   — the agent key is not the owner signer.
-    // Any of these proves the split-key boundary: an agent authority can never
-    // drive the owner-only ledger-sync path.
+    //   AccountNotSigner (3010)                   — the agent key is not the owner signer,
+    //   AccountDidNotDeserialize (3003)           — the supplied policy account is not a
+    //                                               Sentinel PolicyAccount under this program.
+    // Any of these proves the split-key boundary: an agent authority can never drive
+    // the owner-only ledger-sync path. This suite asserts rejection, not a specific
+    // rejection, because the deployed build is an upgradeable program.
     const isConstraintSeeds = logStr.includes('ConstraintSeeds') || logStr.includes('0x7d6') || logStr.includes('2006');
     const isConstraintHasOne = logStr.includes('ConstraintHasOne') || logStr.includes('0x7d1') || logStr.includes('2001');
     const isAccountNotSigner = logStr.includes('AccountNotSigner') || logStr.includes('0xbc2') || logStr.includes('3010');
+    const isAccountDidNotDeserialize = logStr.includes('AccountDidNotDeserialize') || logStr.includes('0xbb7') || logStr.includes('3003');
 
     assert.ok(
-      isConstraintSeeds || isConstraintHasOne || isAccountNotSigner,
+      isConstraintSeeds || isConstraintHasOne || isAccountNotSigner || isAccountDidNotDeserialize,
       `Expected Anchor constraint violation when agent calls sync_vault. Logs:\n${logStr}`
     );
   });

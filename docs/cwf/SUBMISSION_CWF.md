@@ -110,11 +110,25 @@ No customer conversations yet.
 
 ## Program Version Boundary
 
-**The deployed devnet program build (`3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH`) predates three post-submission hardening changes that are present in source but not yet in the deployed binary.** Stating this explicitly rather than implying source and deployment are identical:
+**The deployed devnet program and this source tree are the same binary.** This is verifiable in one command rather than asserted:
 
-1. **Oracle `posted_slot` binding (≤ 64 slots).** Source adds `MAX_ORACLE_SLOT_LAG = 64` and `check_pyth_slot_lag`, called at the top of `parse_and_verify_pyth_price` before the price is used, binding a verified Pyth print to the slot that consumes it (`programs/sentinel/src/lib.rs:1151`, `lib.rs:1157-1161`, `lib.rs:1231`). This closes a stale-print replay window beyond the existing 60s publish-time freshness check.
-2. **Recovery-liveness fix.** The oversell guard in `recover()` is now gated on an *actual* breach — `if pre_exposure_bps > policy.max_single_asset_bps { check_oversell_guard(...) }` (`programs/sentinel/src/lib.rs:876-878`). Previously the guard applied unconditionally, which could make a vault quarantined at a breach the market has since repaired unsolvable by any `sell_units`, stranding it in `Quarantined` until owner intervention.
-3. **`sync_vault` re-checks policy invariants.** `sync_vault` now re-validates concentration and stablecoin reserve against the owner's `PolicyAccount` before writing balances (`programs/sentinel/src/lib.rs:217-227`). Without it, an owner-asserted sync could set `usdc_balance_cents = 0` and bypass the caps entirely — and, because every custody path asserts exact balance equality, that ledger desync was permanent and unrecoverable.
+```bash
+solana program dump 3TVEhBHwQNoEU1VwNNdzDCVyFBQ2At77n9uTqRKz8AgH deployed.so --url devnet
+shasum -a 256 deployed.so    # 49769774311dd89acc1b07d173ad35337ec9ac444c5bb7e35dbd74b8d2e0b127
+```
 
-**What is NOT affected:** the quarantine / containment state machine itself is unchanged. `flag_violation` hysteresis, `VaultNotActive` lockout, `owner_release`, `expire_quarantine`, the recovery window and nonce replay protection, mandatory SPL custody (`MissingCustodyAccounts` 6045), and the containment `TransferChecked` CPI to `safe_destination` are the same logic in source and in the deployed build — and are fully demonstrated on Devnet by the signatures recorded in [`docs/cwf/devnet-evidence.json`](devnet-evidence.json) and listed in [`docs/VERIFICATION.md`](../VERIFICATION.md): `initialize_policy` → `initialize_vault` → `sync_vault` → `flag_violation` (pending) → `flag_violation` (quarantined) → `recover`, plus `owner_release`.
+| | |
+| :--- | :--- |
+| Deploy transaction | [`5SDRSNRdynxPSHEyyT5jy6ivMSkpAQmjihMcFXRMgF6kuDtFxU9NpDTZk6PLgE18Wo8oW3D4DkwErKdBoh79tQxU`](https://explorer.solana.com/tx/5SDRSNRdynxPSHEyyT5jy6ivMSkpAQmjihMcFXRMgF6kuDtFxU9NpDTZk6PLgE18Wo8oW3D4DkwErKdBoh79tQxU?cluster=devnet) |
+| Binary size | 544,000 bytes |
+| SHA-256 | `49769774311dd89acc1b07d173ad35337ec9ac444c5bb7e35dbd74b8d2e0b127` |
+| Upgrade authority | `GR9CtiUswZtay68U2fGqcDeB1dg8sHtpVi9kk2nCEwzw` |
+
+Three hardening changes landed in this upgrade and are therefore **live on-chain**:
+
+1. **Oracle `posted_slot` binding (≤ 64 slots).** `MAX_ORACLE_SLOT_LAG = 64` and `check_pyth_slot_lag`, called before the price is consumed in `parse_and_verify_pyth_price`, bind a verified Pyth print to the slot that consumes it. This closes a stale-print replay window beyond the existing 60s publish-time freshness check.
+2. **Recovery-liveness fix.** The oversell guard in `recover()` is now gated on an *actual* breach. Unconditional application could make a vault quarantined at a breach the market has since repaired unsolvable by any `sell_units`, stranding it in `Quarantined` until owner intervention.
+3. **`sync_vault` re-checks policy invariants.** `sync_vault` now re-validates concentration and stablecoin reserve against the owner's `PolicyAccount` before writing balances. Without it, an owner-asserted sync could bypass the caps entirely and — because every custody path asserts exact balance equality — permanently desync the ledger from real SPL custody. `PolicyAccount` is a new required account on this instruction.
+
+**Caveat on the lifecycle evidence:** the recorded lifecycle transactions were executed *before* this upgrade, against the previous build of the same program ID. The **quarantine / containment state machine they exercise is unchanged** — `flag_violation` hysteresis, `VaultNotActive` lockout, `owner_release`, `expire_quarantine`, the recovery window and nonce replay protection, mandatory SPL custody (`MissingCustodyAccounts` 6045), and the containment `TransferChecked` CPI to `safe_destination` are the same logic. They are proof of the state machine, not of the three changes above. Those are covered by the test suites and by the binary hash check.
 
